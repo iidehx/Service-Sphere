@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "Service App",
+    "slug": "service-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/service-app-mark.png",
+    "scheme": "service-app",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/service-app-mark.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F8FAFC"
+    },
+    "ios": {
+      "supportsTablet": false
+    },
+    "android": {},
+    "web": {
+      "favicon": "./assets/images/service-app-mark.png"
+    },
+    "plugins": [
+      [
+        "expo-router",
+        {
+          "origin": "https://replit.com/"
+        }
+      ],
+      "expo-font",
+      "expo-web-browser"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}

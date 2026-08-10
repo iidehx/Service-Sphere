@@ -1,0 +1,24 @@
+kind = "mobile"
+previewPath = "/"
+title = "Service App"
+description = "An Android-first two-sided services marketplace where employers post jobs, service providers discover and negotiate work, and both sides manage contracts, completion, reviews, and safety."
+version = "1.0.0"
+id = "artifacts/service-app"
+router = "expo-domain"
+
+[[services]]
+name = "expo"
+ensurePreviewReachable = "/status"
+paths = [ "/" ]
+localPort = 22313
+
+[services.development]
+run = "pnpm --filter @workspace/service-app run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/service-app", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/service-app", "run", "serve" ]
+
+[services.env]
+PORT = "22313"
+BASE_PATH = "/"
