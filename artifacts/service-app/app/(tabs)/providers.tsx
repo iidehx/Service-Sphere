@@ -26,10 +26,14 @@ function ProviderCard({
   profile,
   onMessage,
   onPress,
+  isSaved,
+  onToggleSaved,
 }: {
   profile: PublicProfile;
   onMessage: () => void;
   onPress: () => void;
+  isSaved: boolean;
+  onToggleSaved: () => void;
 }) {
   const colors = useColors();
   const [busy, setBusy] = useState(false);
@@ -48,7 +52,7 @@ function ProviderCard({
         style={({ pressed }) => ({ opacity: pressed ? 0.87 : 1 })}
         testID={`provider-card-${profile.id}`}
       >
-        {/* Top row: avatar + info */}
+        {/* Top row: avatar + info + bookmark */}
         <View style={styles.cardTop}>
           <Avatar name={profile.name} uri={profile.avatarUrl || undefined} size={52} />
           <View style={styles.cardInfo}>
@@ -79,6 +83,7 @@ function ProviderCard({
               </View>
             ) : null}
           </View>
+          {/* Bookmark button — sibling to info, NOT nested inside the outer Pressable body */}
         </View>
 
         {/* Categories */}
@@ -108,31 +113,45 @@ function ProviderCard({
         ) : null}
       </Pressable>
 
-      {/* Footer: price range + Message CTA — sibling of the body Pressable, NOT nested inside it */}
+      {/* Footer: price range + bookmark + Message CTA — sibling of the body Pressable, NOT nested inside it */}
       <View style={styles.cardFooter}>
         {profile.priceRange ? (
           <Text style={[styles.priceRange, { color: colors.foreground }]}>{profile.priceRange}</Text>
         ) : (
           <View />
         )}
-        <Pressable
-          onPress={handleMessage}
-          disabled={busy}
-          testID={`message-${profile.id}`}
-          style={({ pressed }) => [
-            styles.msgBtn,
-            { backgroundColor: colors.primary, opacity: pressed || busy ? 0.75 : 1 },
-          ]}
-        >
-          {busy ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : (
-            <>
-              <Ionicons name="chatbubble-ellipses-outline" size={14} color="#fff" />
-              <Text style={styles.msgBtnText}>Message</Text>
-            </>
-          )}
-        </Pressable>
+        <View style={styles.footerActions}>
+          <Pressable
+            onPress={onToggleSaved}
+            hitSlop={8}
+            testID={`bookmark-${profile.id}`}
+            style={({ pressed }) => [styles.bookmarkBtn, { opacity: pressed ? 0.6 : 1 }]}
+          >
+            <Ionicons
+              name={isSaved ? 'bookmark' : 'bookmark-outline'}
+              size={20}
+              color={isSaved ? colors.primary : colors.mutedForeground}
+            />
+          </Pressable>
+          <Pressable
+            onPress={handleMessage}
+            disabled={busy}
+            testID={`message-${profile.id}`}
+            style={({ pressed }) => [
+              styles.msgBtn,
+              { backgroundColor: colors.primary, opacity: pressed || busy ? 0.75 : 1 },
+            ]}
+          >
+            {busy ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="chatbubble-ellipses-outline" size={14} color="#fff" />
+                <Text style={styles.msgBtnText}>Message</Text>
+              </>
+            )}
+          </Pressable>
+        </View>
       </View>
     </Card>
   );
@@ -141,11 +160,13 @@ function ProviderCard({
 // ---------------------------------------------------------------------------
 // Providers screen
 // ---------------------------------------------------------------------------
+type ViewMode = 'all' | 'saved';
+
 export default function ProvidersScreen() {
   const colors = useColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user, searchProviders, startDirectChat } = useServiceApp();
+  const { user, searchProviders, startDirectChat, toggleSavedProvider, getUserProfile } = useServiceApp();
 
   const [nameQuery, setNameQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -153,6 +174,12 @@ export default function ProvidersScreen() {
   const [results, setResults] = useState<PublicProfile[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>('all');
+
+  // Saved-tab independent state
+  const [savedProfiles, setSavedProfiles] = useState<PublicProfile[]>([]);
+  const [savedLoading, setSavedLoading] = useState(false);
+  const savedFetchedRef = useRef<string>(''); // tracks which set of IDs was last fetched
 
   // Debounce refs
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -188,6 +215,36 @@ export default function ProvidersScreen() {
     };
   }, [nameQuery, selectedCategory, workAreaQuery, doSearch]);
 
+  // Independently fetch all saved provider profiles whenever the saved tab is
+  // active or the saved ID list changes. This is intentionally decoupled from
+  // the directory search so filters never hide saved providers.
+  const savedProviderIds = user?.savedProviderIds ?? [];
+  const savedIdsKey = savedProviderIds.slice().sort().join(',');
+  useEffect(() => {
+    if (viewMode !== 'saved') return;
+    if (savedIdsKey === savedFetchedRef.current) return; // already up to date
+    if (savedProviderIds.length === 0) {
+      setSavedProfiles([]);
+      savedFetchedRef.current = savedIdsKey;
+      return;
+    }
+    setSavedLoading(true);
+    Promise.all(savedProviderIds.map((id) => getUserProfile(id))).then((profiles) => {
+      setSavedProfiles(profiles.filter((p): p is PublicProfile => p !== null));
+      savedFetchedRef.current = savedIdsKey;
+      setSavedLoading(false);
+    });
+  }, [viewMode, savedIdsKey, savedProviderIds, getUserProfile]);
+
+  // When switching to saved tab, trigger fetch if needed
+  const handleViewModeChange = (mode: ViewMode) => {
+    setViewMode(mode);
+    if (mode === 'saved' && savedIdsKey !== savedFetchedRef.current) {
+      // useEffect above will fire; just reset so it runs
+      savedFetchedRef.current = '';
+    }
+  };
+
   const handleMessage = async (providerId: string) => {
     const { chatId, error } = await startDirectChat(providerId);
     if (chatId) {
@@ -215,6 +272,10 @@ export default function ProvidersScreen() {
     );
   }
 
+  // Derive display list based on view mode
+  const isLoadingSaved = viewMode === 'saved' && savedLoading;
+  const displayList = viewMode === 'saved' ? savedProfiles : results;
+
   const allCategories = CATEGORIES as readonly string[];
 
   return (
@@ -229,111 +290,136 @@ export default function ProvidersScreen() {
         <Text style={[styles.headerTitle, { color: colors.foreground }]}>Find Providers</Text>
       </View>
 
-      {/* ---- Filters ---- */}
-      <View style={[styles.filterWrap, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-        {/* Name search */}
-        <View style={[styles.searchBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
-          <Ionicons name="search-outline" size={16} color={colors.mutedForeground} />
-          <TextInput
-            placeholder="Search by name…"
-            placeholderTextColor={colors.mutedForeground}
-            value={nameQuery}
-            onChangeText={setNameQuery}
-            style={[styles.searchInput, { color: colors.foreground }]}
-            returnKeyType="search"
-            clearButtonMode="while-editing"
-            testID="provider-name-search"
-          />
-          {nameQuery.length > 0 ? (
-            <Pressable onPress={() => setNameQuery('')} hitSlop={6}>
-              <Ionicons name="close-circle" size={15} color={colors.mutedForeground} />
-            </Pressable>
-          ) : null}
-        </View>
-
-        {/* Work area */}
-        <View style={[styles.searchBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
-          <Ionicons name="location-outline" size={16} color={colors.mutedForeground} />
-          <TextInput
-            placeholder="Filter by area (e.g. Austin)…"
-            placeholderTextColor={colors.mutedForeground}
-            value={workAreaQuery}
-            onChangeText={setWorkAreaQuery}
-            style={[styles.searchInput, { color: colors.foreground }]}
-            returnKeyType="search"
-            clearButtonMode="while-editing"
-            testID="provider-area-search"
-          />
-          {workAreaQuery.length > 0 ? (
-            <Pressable onPress={() => setWorkAreaQuery('')} hitSlop={6}>
-              <Ionicons name="close-circle" size={15} color={colors.mutedForeground} />
-            </Pressable>
-          ) : null}
-        </View>
-
-        {/* Category pills */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.pillRow}
-        >
-          <Pressable
-            onPress={() => setSelectedCategory(null)}
-            style={[
-              styles.pill,
-              selectedCategory === null
-                ? { backgroundColor: colors.primary }
-                : { backgroundColor: colors.secondary, borderColor: colors.border, borderWidth: 1 },
-            ]}
-          >
-            <Text
+      {/* ---- View mode tabs (All / Saved) ---- */}
+      <View style={[styles.tabRow, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+        {(['all', 'saved'] as ViewMode[]).map((mode) => {
+          const active = viewMode === mode;
+          return (
+            <Pressable
+              key={mode}
+              onPress={() => handleViewModeChange(mode)}
               style={[
-                styles.pillText,
-                { color: selectedCategory === null ? '#fff' : colors.mutedForeground },
+                styles.tab,
+                active && { borderBottomColor: colors.primary, borderBottomWidth: 2 },
               ]}
             >
-              All
-            </Text>
-          </Pressable>
-          {allCategories.map((c) => {
-            const active = selectedCategory === c;
-            return (
-              <Pressable
-                key={c}
-                onPress={() => setSelectedCategory(active ? null : c)}
-                style={[
-                  styles.pill,
-                  active
-                    ? { backgroundColor: colors.primary }
-                    : { backgroundColor: colors.secondary, borderColor: colors.border, borderWidth: 1 },
-                ]}
-              >
-                <Ionicons
-                  name={CATEGORY_ICONS[c] ?? 'construct'}
-                  size={12}
-                  color={active ? '#fff' : colors.mutedForeground}
-                />
-                <Text style={[styles.pillText, { color: active ? '#fff' : colors.mutedForeground }]}>{c}</Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
+              <Text style={[styles.tabText, { color: active ? colors.primary : colors.mutedForeground }]}>
+                {mode === 'all' ? 'All' : `Saved${savedProviderIds.length > 0 ? ` (${savedProviderIds.length})` : ''}`}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
 
+      {/* ---- Filters (hidden in saved view) ---- */}
+      {viewMode === 'all' && (
+        <View style={[styles.filterWrap, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+          {/* Name search */}
+          <View style={[styles.searchBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
+            <Ionicons name="search-outline" size={16} color={colors.mutedForeground} />
+            <TextInput
+              placeholder="Search by name…"
+              placeholderTextColor={colors.mutedForeground}
+              value={nameQuery}
+              onChangeText={setNameQuery}
+              style={[styles.searchInput, { color: colors.foreground }]}
+              returnKeyType="search"
+              clearButtonMode="while-editing"
+              testID="provider-name-search"
+            />
+            {nameQuery.length > 0 ? (
+              <Pressable onPress={() => setNameQuery('')} hitSlop={6}>
+                <Ionicons name="close-circle" size={15} color={colors.mutedForeground} />
+              </Pressable>
+            ) : null}
+          </View>
+
+          {/* Work area */}
+          <View style={[styles.searchBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
+            <Ionicons name="location-outline" size={16} color={colors.mutedForeground} />
+            <TextInput
+              placeholder="Filter by area (e.g. Austin)…"
+              placeholderTextColor={colors.mutedForeground}
+              value={workAreaQuery}
+              onChangeText={setWorkAreaQuery}
+              style={[styles.searchInput, { color: colors.foreground }]}
+              returnKeyType="search"
+              clearButtonMode="while-editing"
+              testID="provider-area-search"
+            />
+            {workAreaQuery.length > 0 ? (
+              <Pressable onPress={() => setWorkAreaQuery('')} hitSlop={6}>
+                <Ionicons name="close-circle" size={15} color={colors.mutedForeground} />
+              </Pressable>
+            ) : null}
+          </View>
+
+          {/* Category pills */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.pillRow}
+          >
+            <Pressable
+              onPress={() => setSelectedCategory(null)}
+              style={[
+                styles.pill,
+                selectedCategory === null
+                  ? { backgroundColor: colors.primary }
+                  : { backgroundColor: colors.secondary, borderColor: colors.border, borderWidth: 1 },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.pillText,
+                  { color: selectedCategory === null ? '#fff' : colors.mutedForeground },
+                ]}
+              >
+                All
+              </Text>
+            </Pressable>
+            {allCategories.map((c) => {
+              const active = selectedCategory === c;
+              return (
+                <Pressable
+                  key={c}
+                  onPress={() => setSelectedCategory(active ? null : c)}
+                  style={[
+                    styles.pill,
+                    active
+                      ? { backgroundColor: colors.primary }
+                      : { backgroundColor: colors.secondary, borderColor: colors.border, borderWidth: 1 },
+                  ]}
+                >
+                  <Ionicons
+                    name={CATEGORY_ICONS[c] ?? 'construct'}
+                    size={12}
+                    color={active ? '#fff' : colors.mutedForeground}
+                  />
+                  <Text style={[styles.pillText, { color: active ? '#fff' : colors.mutedForeground }]}>{c}</Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
+
       {/* ---- Results ---- */}
-      {loading && !searched ? (
+      {(viewMode === 'all' && loading && !searched) || isLoadingSaved ? (
         <View style={styles.center}>
           <ActivityIndicator color={colors.primary} />
         </View>
       ) : (
         <FlatList
-          data={results}
+          data={displayList}
           keyExtractor={(p) => p.id}
           renderItem={({ item }) => (
             <ProviderCard
               profile={item}
               onPress={() => router.push({ pathname: '/user/[id]', params: { id: item.id } })}
               onMessage={() => handleMessage(item.id)}
+              isSaved={savedProviderIds.includes(item.id)}
+              onToggleSaved={() => toggleSavedProvider(item.id)}
             />
           )}
           contentContainerStyle={{
@@ -343,18 +429,22 @@ export default function ProvidersScreen() {
           }}
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={
-            searched && !loading ? (
+            (viewMode === 'all' ? searched && !loading : !savedLoading) ? (
               <EmptyState
-                icon="people-outline"
-                title="No providers found"
-                body="Try adjusting your search or clearing the category filter."
+                icon={viewMode === 'saved' ? 'bookmark-outline' : 'people-outline'}
+                title={viewMode === 'saved' ? 'No saved providers' : 'No providers found'}
+                body={
+                  viewMode === 'saved'
+                    ? 'Tap the bookmark icon on any provider card to save them here.'
+                    : 'Try adjusting your search or clearing the category filter.'
+                }
               />
             ) : null
           }
           ListHeaderComponent={
-            results.length > 0 && !loading ? (
+            displayList.length > 0 && !(viewMode === 'all' ? loading : savedLoading) ? (
               <Text style={[styles.resultCount, { color: colors.mutedForeground }]}>
-                {results.length} provider{results.length !== 1 ? 's' : ''}
+                {displayList.length} provider{displayList.length !== 1 ? 's' : ''}
               </Text>
             ) : null
           }
@@ -371,6 +461,17 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   headerTitle: { fontFamily: 'Inter_700Bold', fontSize: 22 },
+  tabRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    paddingHorizontal: 14,
+  },
+  tab: {
+    paddingHorizontal: 4,
+    paddingVertical: 10,
+    marginRight: 20,
+  },
+  tabText: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
   filterWrap: {
     paddingHorizontal: 14,
     paddingTop: 10,
@@ -438,6 +539,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginTop: 2,
+  },
+  footerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  bookmarkBtn: {
+    padding: 4,
   },
   priceRange: { fontFamily: 'Inter_600SemiBold', fontSize: 12.5 },
   msgBtn: {

@@ -113,6 +113,7 @@ export type PublicProfile = {
 export type SessionUser = PublicProfile & {
   email: string;
   savedJobIds: string[];
+  savedProviderIds: string[];
   blockedUserIds: string[];
   notifyQuotes: boolean;
 };
@@ -285,6 +286,7 @@ export function makeSeedDb(): DemoDb {
       },
     ],
     savedJobIds: [],
+    savedProviderIds: [],
     blockedUserIds: [],
     notifyQuotes: true,
     verified: true,
@@ -321,6 +323,7 @@ export function makeSeedDb(): DemoDb {
       },
     ],
     savedJobIds: ['job-1'],
+    savedProviderIds: [],
     blockedUserIds: [],
     notifyQuotes: true,
     verified: true,
@@ -341,6 +344,7 @@ export function makeSeedDb(): DemoDb {
     ratingCount: 5,
     recentReviews: [],
     savedJobIds: [],
+    savedProviderIds: [],
     blockedUserIds: [],
     notifyQuotes: true,
     verified: false,
@@ -377,6 +381,7 @@ export function makeSeedDb(): DemoDb {
       },
     ],
     savedJobIds: [],
+    savedProviderIds: [],
     blockedUserIds: [],
     notifyQuotes: true,
     verified: true,
@@ -410,6 +415,7 @@ export function makeSeedDb(): DemoDb {
       },
     ],
     savedJobIds: [],
+    savedProviderIds: [],
     blockedUserIds: [],
     notifyQuotes: true,
     verified: true,
@@ -430,6 +436,7 @@ export function makeSeedDb(): DemoDb {
     ratingCount: 14,
     recentReviews: [],
     savedJobIds: [],
+    savedProviderIds: [],
     blockedUserIds: [],
     notifyQuotes: true,
     verified: false,

@@ -100,6 +100,7 @@ type ServiceAppContextValue = {
   addJob: (input: NewJobInput) => Promise<string | null>;
   acceptJob: (jobId: string) => Promise<{ chatId?: string; error?: string }>;
   toggleSaved: (jobId: string) => Promise<void>;
+  toggleSavedProvider: (providerId: string) => Promise<void>;
   proposeQuote: (jobId: string, breakdown: QuoteBreakdown) => Promise<string | null>;
   acceptQuote: (jobId: string) => Promise<string | null>;
   declineQuote: (jobId: string) => Promise<string | null>;
@@ -144,6 +145,7 @@ function mapUser(id: string, d: any): SessionUser {
     ratingCount: typeof d?.ratingCount === 'number' ? d.ratingCount : 0,
     recentReviews: Array.isArray(d?.recentReviews) ? d.recentReviews : [],
     savedJobIds: Array.isArray(d?.savedJobIds) ? d.savedJobIds : [],
+    savedProviderIds: Array.isArray(d?.savedProviderIds) ? d.savedProviderIds : [],
     blockedUserIds: Array.isArray(d?.blockedUserIds) ? d.blockedUserIds : [],
     notifyQuotes: d?.notifyQuotes !== false,
     verified: Boolean(d?.verified),
@@ -248,6 +250,7 @@ function newUserDoc(name: string, email: string, role: Role) {
     ratingCount: 0,
     recentReviews: [],
     savedJobIds: [],
+    savedProviderIds: [],
     blockedUserIds: [],
     notifyQuotes: true,
     verified: false,
@@ -767,6 +770,32 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
       const { db } = getFirebase();
       await updateDoc(doc(db, 'users', user.id), {
         savedJobIds: saved ? arrayRemove(jobId) : arrayUnion(jobId),
+      });
+    } catch {
+      // Non-critical.
+    }
+  };
+
+  const toggleSavedProvider = async (providerId: string) => {
+    if (!user) return;
+    const existingIds: string[] = user.savedProviderIds ?? [];
+    const saved = existingIds.includes(providerId);
+    if (mode === 'demo') {
+      updateDemo((d) => {
+        const record = d.users[user.id];
+        if (!record) return d;
+        const currentIds: string[] = record.savedProviderIds ?? [];
+        const savedProviderIds = saved
+          ? currentIds.filter((id) => id !== providerId)
+          : [...currentIds, providerId];
+        return { ...d, users: { ...d.users, [user.id]: { ...record, savedProviderIds } } };
+      });
+      return;
+    }
+    try {
+      const { db } = getFirebase();
+      await updateDoc(doc(db, 'users', user.id), {
+        savedProviderIds: saved ? arrayRemove(providerId) : arrayUnion(providerId),
       });
     } catch {
       // Non-critical.
@@ -1528,6 +1557,7 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
       addJob,
       acceptJob,
       toggleSaved,
+      toggleSavedProvider,
       proposeQuote,
       acceptQuote,
       declineQuote,
