@@ -1,0 +1,51 @@
+0 verbose cli C:\Program Files\nodejs\node.exe C:\Program Files\nodejs\node_modules\npm\bin\npm-cli.js
+1 info using npm@10.9.3
+2 info using node@v22.18.0
+3 silly config load:file:C:\Program Files\nodejs\node_modules\npm\npmrc
+4 silly config load:file:C:\Users\F\Downloads\Service-Sphere\Service-Sphere\artifacts\service-app\.npmrc
+5 silly config load:file:C:\Users\F\.npmrc
+6 silly config load:file:C:\Users\F\AppData\Roaming\npm\etc\npmrc
+7 verbose title npm install
+8 verbose argv "install"
+9 verbose logfile logs-max:10 dir:C:\Users\F\AppData\Local\npm-cache\_logs\2026-08-14T17_09_32_638Z-
+10 verbose logfile C:\Users\F\AppData\Local\npm-cache\_logs\2026-08-14T17_09_32_638Z-debug-0.log
+11 silly logfile start cleaning logs, removing 1 files
+12 silly packumentCache heap:4345298944 maxSize:1086324736 maxEntrySize:543162368
+13 silly logfile done cleaning log files
+14 silly idealTree buildDeps
+15 silly fetch manifest expo-notifications@~0.32.17
+16 silly packumentCache full:https://registry.npmjs.org/expo-notifications cache-miss
+17 http fetch GET 200 https://registry.npmjs.org/expo-notifications 378ms (cache miss)
+18 silly packumentCache full:https://registry.npmjs.org/expo-notifications set size:undefined disposed:false
+19 silly fetch manifest expo@~54.0.27
+20 silly packumentCache full:https://registry.npmjs.org/expo cache-miss
+21 http fetch GET 200 https://registry.npmjs.org/expo 111ms (cache miss)
+22 silly packumentCache full:https://registry.npmjs.org/expo set size:undefined disposed:false
+23 silly fetch manifest @expo/dom-webview@*
+24 silly packumentCache full:https://registry.npmjs.org/@expo%2fdom-webview cache-miss
+25 http fetch GET 200 https://registry.npmjs.org/@expo%2fdom-webview 356ms (cache miss)
+26 silly packumentCache full:https://registry.npmjs.org/@expo%2fdom-webview set size:undefined disposed:false
+27 verbose stack Error: Unsupported URL Type "catalog:": catalog:
+27 verbose stack     at unsupportedURLType (C:\Program Files\nodejs\node_modules\npm\node_modules\npm-package-arg\lib\npa.js:369:15)
+27 verbose stack     at fromURL (C:\Program Files\nodejs\node_modules\npm\node_modules\npm-package-arg\lib\npa.js:428:13)
+27 verbose stack     at Function.resolve (C:\Program Files\nodejs\node_modules\npm\node_modules\npm-package-arg\lib\npa.js:110:12)
+27 verbose stack     at #nodeFromEdge (C:\Program Files\nodejs\node_modules\npm\node_modules\@npmcli\arborist\lib\arborist\build-ideal-tree.js:1039:22)
+27 verbose stack     at #loadPeerSet (C:\Program Files\nodejs\node_modules\npm\node_modules\@npmcli\arborist\lib\arborist\build-ideal-tree.js:1308:47)
+27 verbose stack     at #nodeFromEdge (C:\Program Files\nodejs\node_modules\npm\node_modules\@npmcli\arborist\lib\arborist\build-ideal-tree.js:1082:29)
+27 verbose stack     at async #loadPeerSet (C:\Program Files\nodejs\node_modules\npm\node_modules\@npmcli\arborist\lib\arborist\build-ideal-tree.js:1297:11)
+27 verbose stack     at async #loadPeerSet (C:\Program Files\nodejs\node_modules\npm\node_modules\@npmcli\arborist\lib\arborist\build-ideal-tree.js:1308:23)
+27 verbose stack     at async #buildDepStep (C:\Program Files\nodejs\node_modules\npm\node_modules\@npmcli\arborist\lib\arborist\build-ideal-tree.js:904:11)
+27 verbose stack     at async Arborist.buildIdealTree (C:\Program Files\nodejs\node_modules\npm\node_modules\@npmcli\arborist\lib\arborist\build-ideal-tree.js:181:7)
+28 error code EUNSUPPORTEDPROTOCOL
+29 error Unsupported URL Type "catalog:": catalog:
+30 silly unfinished npm timer reify 1786727386708
+31 silly unfinished npm timer reify:loadTrees 1786727386710
+32 silly unfinished npm timer idealTree:buildDeps 1786727386726
+33 silly unfinished npm timer idealTree:#root 1786727386727
+34 verbose cwd C:\Users\F\Downloads\Service-Sphere\Service-Sphere\artifacts\service-app
+35 verbose os Windows_NT 10.0.19045
+36 verbose node v22.18.0
+37 verbose npm  v10.9.3
+38 verbose exit 1
+39 verbose code 1
+40 error A complete log of this run can be found in: C:\Users\F\AppData\Local\npm-cache\_logs\2026-08-14T17_09_32_638Z-debug-0.log
