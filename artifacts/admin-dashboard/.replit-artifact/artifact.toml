@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/admin/"
+title = "Admin Dashboard"
+description = "Internal admin panel for moderating flagged user reports. Staff sign in with Firebase email/password; access is gated to UIDs listed in the Firestore admins collection. Shows all reports sorted by date with reporter, accused user, reason, and message. Includes a Disable Account button that sets disabled:true on the user doc."
+version = "1.0.0"
+id = "artifacts/admin-dashboard"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/admin/" ]
+localPort = 22133
+
+[services.development]
+run = "pnpm --filter @workspace/admin-dashboard run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/admin-dashboard", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/admin-dashboard/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "22133"
+BASE_PATH = "/admin/"
