@@ -22,16 +22,23 @@ import { getFirebase, isFirebaseConfigured } from '@/lib/firebase';
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
+// expo-notifications push support was removed from Expo Go in SDK 53.
+// Guard every Notifications call so the app works in Expo Go for development.
+const isExpoGo = Constants.appOwnership === 'expo';
+
 // Configure how notifications are presented when the app is in the foreground.
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
+// Skip in Expo Go — setNotificationHandler throws in the Expo Go runtime.
+if (!isExpoGo) {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    }),
+  });
+}
 
 const queryClient = new QueryClient();
 
@@ -53,8 +60,8 @@ function PushRegistrar() {
   const registered = useRef<string | null>(null);
 
   useEffect(() => {
-    // Only run in Firebase mode on a real device; web/simulator can't get FCM tokens.
-    if (!isFirebaseConfigured || !userId || Platform.OS === 'web') return;
+    // Only run in a real build — Expo Go dropped push support in SDK 53.
+    if (isExpoGo || !isFirebaseConfigured || !userId || Platform.OS === 'web') return;
 
     // Avoid re-registering with the same token for the same session.
     if (registered.current === userId) return;
