@@ -19,6 +19,7 @@ export default function ProfileEditScreen() {
   const [priceRange, setPriceRange] = useState(user?.priceRange ?? '');
   const [companyInfo, setCompanyInfo] = useState(user?.companyInfo ?? '');
   const [categories, setCategories] = useState<string[]>(user?.categories ?? []);
+  const [availableForWork, setAvailableForWork] = useState<boolean>(user?.availableForWork ?? true);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [avatarBusy, setAvatarBusy] = useState(false);
@@ -53,7 +54,7 @@ export default function ProfileEditScreen() {
     setError('');
     const patch = isEmployer
       ? { name: name.trim(), workArea: workArea.trim(), bio: bio.trim(), companyInfo: companyInfo.trim() }
-      : { name: name.trim(), workArea: workArea.trim(), bio: bio.trim(), priceRange: priceRange.trim(), categories };
+      : { name: name.trim(), workArea: workArea.trim(), bio: bio.trim(), priceRange: priceRange.trim(), categories, availableForWork };
     const err = await updateProfile(patch);
     setBusy(false);
     if (err) {
@@ -145,6 +146,47 @@ export default function ProfileEditScreen() {
                 onChangeText={setPriceRange}
                 testID="edit-rate"
               />
+              {/* Availability toggle */}
+              <Pressable
+                testID="toggle-available"
+                onPress={() => setAvailableForWork((v) => !v)}
+                style={[
+                  styles.availRow,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: availableForWork ? colors.success : colors.border,
+                    borderWidth: 1,
+                    borderRadius: 12,
+                  },
+                ]}
+              >
+                <View style={styles.availLeft}>
+                  <View style={[styles.availDot, { backgroundColor: availableForWork ? colors.success : colors.mutedForeground }]} />
+                  <View>
+                    <Text style={[styles.availLabel, { color: colors.foreground }]}>
+                      {availableForWork ? 'Available for work' : 'Not available'}
+                    </Text>
+                    <Text style={[styles.availHint, { color: colors.mutedForeground }]}>
+                      {availableForWork
+                        ? "Employers can see you\u2019re open to new jobs"
+                        : 'Employers will see you as currently busy'}
+                    </Text>
+                  </View>
+                </View>
+                <View
+                  style={[
+                    styles.toggleTrack,
+                    { backgroundColor: availableForWork ? colors.success : colors.secondary },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.toggleThumb,
+                      { transform: [{ translateX: availableForWork ? 18 : 2 }] },
+                    ]}
+                  />
+                </View>
+              </Pressable>
             </>
           )}
 
@@ -176,4 +218,11 @@ const styles = StyleSheet.create({
   tag: { borderWidth: 1, borderRadius: 9, paddingHorizontal: 11, paddingVertical: 7 },
   tagText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
   error: { fontFamily: 'Inter_500Medium', fontSize: 13 },
+  availRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 14, gap: 12 },
+  availLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  availDot: { width: 10, height: 10, borderRadius: 5 },
+  availLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
+  availHint: { fontFamily: 'Inter_400Regular', fontSize: 12, marginTop: 2 },
+  toggleTrack: { width: 44, height: 26, borderRadius: 13, justifyContent: 'center' },
+  toggleThumb: { width: 22, height: 22, borderRadius: 11, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 2, shadowOffset: { width: 0, height: 1 } },
 });

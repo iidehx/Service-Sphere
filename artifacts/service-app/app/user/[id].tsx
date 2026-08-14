@@ -93,6 +93,14 @@ export default function UserProfileScreen() {
                   <Text style={[styles.roleChipText, { color: colors.success }]}>Verified</Text>
                 </View>
               ) : null}
+              {profile.role === 'provider' && (
+                <View style={[styles.roleChip, { backgroundColor: profile.availableForWork ? colors.successSoft : colors.secondary }]}>
+                  <View style={[styles.availDot, { backgroundColor: profile.availableForWork ? colors.success : colors.mutedForeground }]} />
+                  <Text style={[styles.roleChipText, { color: profile.availableForWork ? colors.success : colors.mutedForeground }]}>
+                    {profile.availableForWork ? 'Available' : 'Busy'}
+                  </Text>
+                </View>
+              )}
             </View>
             <View style={styles.ratingRow}>
               <Stars value={profile.ratingAvg} size={15} />
@@ -212,6 +220,7 @@ const styles = StyleSheet.create({
   member: { fontFamily: 'Inter_400Regular', fontSize: 11.5 },
   bio: { fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 19, textAlign: 'center' },
   priceRange: { fontFamily: 'Inter_600SemiBold', fontSize: 13 },
+  availDot: { width: 6, height: 6, borderRadius: 3 },
   tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, justifyContent: 'center' },
   tag: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: 7 },
   tagText: { fontFamily: 'Inter_600SemiBold', fontSize: 11 },

@@ -82,6 +82,16 @@ function ProviderCard({
                 </Text>
               </View>
             ) : null}
+            {/* Availability badge */}
+            <View style={[
+              styles.availBadge,
+              { backgroundColor: profile.availableForWork ? colors.successSoft : colors.secondary },
+            ]}>
+              <View style={[styles.availDot, { backgroundColor: profile.availableForWork ? colors.success : colors.mutedForeground }]} />
+              <Text style={[styles.availText, { color: profile.availableForWork ? colors.success : colors.mutedForeground }]}>
+                {profile.availableForWork ? 'Available' : 'Busy'}
+              </Text>
+            </View>
           </View>
           {/* Bookmark button — sibling to info, NOT nested inside the outer Pressable body */}
         </View>
@@ -560,4 +570,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   msgBtnText: { fontFamily: 'Inter_700Bold', fontSize: 13, color: '#fff' },
+  availBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6, marginTop: 2 },
+  availDot: { width: 6, height: 6, borderRadius: 3 },
+  availText: { fontFamily: 'Inter_600SemiBold', fontSize: 11 },
 });

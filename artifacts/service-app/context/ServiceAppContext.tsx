@@ -59,7 +59,7 @@ export type GoogleIntent = 'login' | 'register';
 export type ProfilePatch = Partial<
   Pick<
     SessionUser,
-    'name' | 'workArea' | 'bio' | 'categories' | 'priceRange' | 'companyInfo' | 'avatarUrl' | 'notifyQuotes'
+    'name' | 'workArea' | 'bio' | 'categories' | 'priceRange' | 'companyInfo' | 'avatarUrl' | 'notifyQuotes' | 'availableForWork'
   >
 >;
 
@@ -149,6 +149,7 @@ function mapUser(id: string, d: any): SessionUser {
     blockedUserIds: Array.isArray(d?.blockedUserIds) ? d.blockedUserIds : [],
     notifyQuotes: d?.notifyQuotes !== false,
     verified: Boolean(d?.verified),
+    availableForWork: d?.availableForWork !== false,
     createdAtMs: typeof d?.createdAtMs === 'number' ? d.createdAtMs : Date.now(),
   };
 }
@@ -254,6 +255,7 @@ function newUserDoc(name: string, email: string, role: Role) {
     blockedUserIds: [],
     notifyQuotes: true,
     verified: false,
+    availableForWork: true,
     createdAtMs: Date.now(),
   };
 }
@@ -1498,6 +1500,7 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
     if (patch.companyInfo !== undefined) clean.companyInfo = patch.companyInfo.trim();
     if (patch.avatarUrl !== undefined) clean.avatarUrl = patch.avatarUrl;
     if (patch.notifyQuotes !== undefined) clean.notifyQuotes = patch.notifyQuotes;
+    if (patch.availableForWork !== undefined) clean.availableForWork = patch.availableForWork;
     if (Object.keys(clean).length === 0) return null;
 
     if (mode === 'demo') {

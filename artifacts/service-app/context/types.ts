@@ -107,6 +107,7 @@ export type PublicProfile = {
   ratingCount: number;
   recentReviews: Review[];
   verified?: boolean;
+  availableForWork?: boolean;
   createdAtMs: number;
 };
 
@@ -116,6 +117,7 @@ export type SessionUser = PublicProfile & {
   savedProviderIds: string[];
   blockedUserIds: string[];
   notifyQuotes: boolean;
+  availableForWork?: boolean;
 };
 
 export type Report = {
@@ -327,6 +329,7 @@ export function makeSeedDb(): DemoDb {
     blockedUserIds: [],
     notifyQuotes: true,
     verified: true,
+    availableForWork: true,
     createdAtMs: now - 400 * d,
   };
 
@@ -385,6 +388,7 @@ export function makeSeedDb(): DemoDb {
     blockedUserIds: [],
     notifyQuotes: true,
     verified: true,
+    availableForWork: true,
     createdAtMs: now - 500 * d,
   };
 
@@ -419,6 +423,7 @@ export function makeSeedDb(): DemoDb {
     blockedUserIds: [],
     notifyQuotes: true,
     verified: true,
+    availableForWork: false,
     createdAtMs: now - 310 * d,
   };
 
@@ -608,6 +613,7 @@ export function toPublicProfile(u: SessionUser | DemoUserRecord): PublicProfile 
     ratingCount: u.ratingCount,
     recentReviews: u.recentReviews,
     verified: u.verified,
+    availableForWork: u.availableForWork,
     createdAtMs: u.createdAtMs,
   };
 }
