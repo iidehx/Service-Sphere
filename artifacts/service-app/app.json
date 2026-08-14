@@ -16,7 +16,13 @@
     "ios": {
       "supportsTablet": false
     },
-    "android": {},
+    "android": {
+      "package": "com.serviceapp.marketplace",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/service-app-mark.png",
+        "backgroundColor": "#1E3A5F"
+      }
+    },
     "web": {
       "favicon": "./assets/images/service-app-mark.png"
     },
