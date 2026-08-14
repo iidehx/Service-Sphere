@@ -18,6 +18,7 @@ import {
   deleteField,
   doc,
   getDoc,
+  getDocs,
   limit,
   onSnapshot,
   orderBy,
@@ -110,6 +111,8 @@ type ServiceAppContextValue = {
   markChatRead: (chatId: string) => void;
   // People
   getUserProfile: (userId: string) => Promise<PublicProfile | null>;
+  searchProviders: (params: { name?: string; category?: string; workArea?: string }) => Promise<PublicProfile[]>;
+  startDirectChat: (providerId: string) => Promise<{ chatId?: string; error?: string }>;
   reportUser: (input: { userId: string; jobId?: string; reason: string; message: string }) => Promise<string | null>;
   blockUser: (userId: string) => Promise<void>;
   unblockUser: (userId: string) => Promise<void>;
@@ -1268,6 +1271,116 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
   const blockUser = (userId: string) => setBlocked(userId, true);
   const unblockUser = (userId: string) => setBlocked(userId, false);
 
+  const searchProviders = async (params: { name?: string; category?: string; workArea?: string }): Promise<PublicProfile[]> => {
+    const { name, category, workArea } = params;
+    if (mode === 'demo') {
+      let results = Object.values(demoDb?.users ?? {}).filter((u) => u.role === 'provider');
+      if (name) {
+        const q = name.toLowerCase();
+        results = results.filter((u) => u.name.toLowerCase().includes(q));
+      }
+      if (category) results = results.filter((u) => u.categories.includes(category));
+      if (workArea) {
+        const q = workArea.toLowerCase();
+        results = results.filter((u) => u.workArea.toLowerCase().includes(q));
+      }
+      return results.map(toPublicProfile).sort((a, b) => b.ratingAvg - a.ratingAvg);
+    }
+    try {
+      const { db } = getFirebase();
+      // Single-field queries only — no composite index required.
+      const q = category
+        ? query(collection(db, 'users'), where('role', '==', 'provider'), where('categories', 'array-contains', category), limit(60))
+        : query(collection(db, 'users'), where('role', '==', 'provider'), limit(60));
+      const snap = await getDocs(q);
+      let results = snap.docs.map((d) => toPublicProfile(mapUser(d.id, d.data())));
+      if (name) {
+        const nq = name.toLowerCase();
+        results = results.filter((u) => u.name.toLowerCase().includes(nq));
+      }
+      if (workArea) {
+        const wq = workArea.toLowerCase();
+        results = results.filter((u) => u.workArea.toLowerCase().includes(wq));
+      }
+      return results.sort((a, b) => b.ratingAvg - a.ratingAvg);
+    } catch {
+      return [];
+    }
+  };
+
+  const directChatId = (a: string, b: string) => `direct-${[a, b].sort().join('-')}`;
+
+  const startDirectChat = async (providerId: string): Promise<{ chatId?: string; error?: string }> => {
+    if (!user) return { error: 'Please sign in first.' };
+    // Only employers may initiate direct chats with providers.
+    if (user.role !== 'employer') return { error: 'Only employers can message providers directly.' };
+    // Prevent self-chat.
+    if (providerId === user.id) return { error: 'Cannot start a chat with yourself.' };
+    // Respect blocked users.
+    if (user.blockedUserIds.includes(providerId)) return { error: 'You have blocked this user.' };
+
+    const chatId = directChatId(user.id, providerId);
+
+    if (mode === 'demo') {
+      const providerRecord = demoDb?.users[providerId];
+      // Validate target exists and is a provider.
+      if (!providerRecord) return { error: 'Provider not found.' };
+      if (providerRecord.role !== 'provider') return { error: 'You can only message service providers.' };
+      const exists = demoDb?.chats.find((c) => c.id === chatId);
+      if (!exists) {
+        const providerName = providerRecord.name;
+        updateDemo((d) => ({
+          ...d,
+          chats: [
+            ...d.chats,
+            {
+              id: chatId,
+              jobId: '',
+              jobTitle: 'Direct message',
+              participants: [user.id, providerId],
+              participantNames: { [user.id]: user.name, [providerId]: providerName },
+              lastMessage: '',
+              lastMessageAtMs: Date.now(),
+              lastSenderId: undefined,
+              lastReadAt: {},
+              createdAtMs: Date.now(),
+              messages: [],
+            },
+          ],
+        }));
+      }
+      return { chatId };
+    }
+
+    try {
+      const { db } = getFirebase();
+      // Validate target exists and is a provider before creating the chat.
+      const providerSnap = await getDoc(doc(db, 'users', providerId));
+      if (!providerSnap.exists()) return { error: 'Provider not found.' };
+      const providerData = providerSnap.data();
+      if (providerData?.role !== 'provider') return { error: 'You can only message service providers.' };
+      const providerName: string = providerData?.name ?? 'Provider';
+
+      const chatRef = doc(db, 'chats', chatId);
+      const snap = await getDoc(chatRef);
+      if (!snap.exists()) {
+        await setDoc(chatRef, {
+          jobId: '',
+          jobTitle: 'Direct message',
+          participants: [user.id, providerId],
+          participantNames: { [user.id]: user.name, [providerId]: providerName },
+          lastMessage: '',
+          lastMessageAtMs: Date.now(),
+          lastReadAt: {},
+          createdAtMs: Date.now(),
+        });
+      }
+      return { chatId };
+    } catch (e) {
+      return { error: friendlyError(e) };
+    }
+  };
+
   // ---- Notifications & profile -----------------------------------------------
   const markNotificationsRead = async () => {
     if (!user) return;
@@ -1373,6 +1486,8 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
       sendMessage,
       markChatRead,
       getUserProfile,
+      searchProviders,
+      startDirectChat,
       reportUser,
       blockUser,
       unblockUser,

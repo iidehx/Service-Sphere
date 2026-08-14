@@ -119,6 +119,30 @@ export default function HomeScreen() {
               myJobs.slice(0, 4).map((job) => <JobCard key={job.id} job={job} showSave={false} />)
             )}
 
+            <SectionTitle
+              title="Browse providers"
+              action="Find a pro"
+              onAction={() => router.push('/(tabs)/providers')}
+            />
+            <Pressable
+              onPress={() => router.push('/(tabs)/providers')}
+              style={({ pressed }) => [
+                styles.browseCard,
+                { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.85 : 1 },
+              ]}
+            >
+              <View style={[styles.browseIcon, { backgroundColor: colors.primarySoft }]}>
+                <Ionicons name="people-outline" size={22} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.browseTitle, { color: colors.foreground }]}>Find the right pro</Text>
+                <Text style={[styles.browseBody, { color: colors.mutedForeground }]}>
+                  Search providers by skill, rating, and area — then message them directly.
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.mutedForeground} />
+            </Pressable>
+
             <SectionTitle title="Quick post by category" />
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingRight: 12 }}>
               {CATEGORIES.map((c) => (
@@ -232,4 +256,22 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     elevation: 6,
   },
+  browseCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 14,
+    marginBottom: 20,
+  },
+  browseIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  browseTitle: { fontFamily: 'Inter_700Bold', fontSize: 14, marginBottom: 2 },
+  browseBody: { fontFamily: 'Inter_400Regular', fontSize: 12.5, lineHeight: 17 },
 });

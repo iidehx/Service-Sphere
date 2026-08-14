@@ -347,6 +347,95 @@ export function makeSeedDb(): DemoDb {
     createdAtMs: now - 90 * d,
   };
 
+  const provider2: DemoUserRecord = {
+    id: 'provider-2',
+    name: 'Maria Santos',
+    email: 'maria@demo.serviceapp',
+    password: 'password',
+    role: 'provider',
+    workArea: 'Austin, TX',
+    categories: ['Cleaning', 'Pest Control'],
+    priceRange: '$35–$60 / hour',
+    bio: 'Professional cleaner and pest control technician with 8 years of residential experience. Eco-friendly products on request.',
+    ratingAvg: 4.9,
+    ratingCount: 61,
+    recentReviews: [
+      {
+        id: 'seed-rev-p2',
+        jobId: 'job-old-3',
+        jobTitle: 'Move-out deep clean',
+        reviewerId: 'employer-1',
+        reviewerName: 'Alex Morgan',
+        targetUserId: 'provider-2',
+        rating: 5,
+        communication: 5,
+        quality: 5,
+        punctuality: 5,
+        tags: ['Professional', 'On time', 'Would hire again'],
+        comment: 'Maria left the place spotless. Incredibly thorough.',
+        createdAtMs: now - 3 * d,
+      },
+    ],
+    savedJobIds: [],
+    blockedUserIds: [],
+    notifyQuotes: true,
+    verified: true,
+    createdAtMs: now - 500 * d,
+  };
+
+  const provider3: DemoUserRecord = {
+    id: 'provider-3',
+    name: 'Carlos Reyes',
+    email: 'carlos@demo.serviceapp',
+    password: 'password',
+    role: 'provider',
+    workArea: 'Round Rock, TX',
+    categories: ['Plumbing', 'Electrical', 'Handyman'],
+    priceRange: '$65–$120 / hour',
+    bio: 'Licensed plumber and electrician. Fast turnaround on emergency calls. 12 years in the trade.',
+    ratingAvg: 4.7,
+    ratingCount: 29,
+    recentReviews: [
+      {
+        id: 'seed-rev-p3',
+        jobId: 'job-old-4',
+        jobTitle: 'Fix leaking faucet',
+        reviewerId: 'employer-2',
+        reviewerName: 'Taylor Brooks',
+        targetUserId: 'provider-3',
+        rating: 5,
+        tags: ['Professional', 'Great value'],
+        comment: 'Fixed the leak same day. Reasonable price.',
+        createdAtMs: now - 7 * d,
+      },
+    ],
+    savedJobIds: [],
+    blockedUserIds: [],
+    notifyQuotes: true,
+    verified: true,
+    createdAtMs: now - 310 * d,
+  };
+
+  const provider4: DemoUserRecord = {
+    id: 'provider-4',
+    name: 'Sam Park',
+    email: 'sam@demo.serviceapp',
+    password: 'password',
+    role: 'provider',
+    workArea: 'Austin, TX',
+    categories: ['Landscaping', 'Moving'],
+    priceRange: '$50–$90 / hour',
+    bio: 'Lawn care specialist and moving crew lead. I have a truck and a team ready for larger moves.',
+    ratingAvg: 4.5,
+    ratingCount: 14,
+    recentReviews: [],
+    savedJobIds: [],
+    blockedUserIds: [],
+    notifyQuotes: true,
+    verified: false,
+    createdAtMs: now - 60 * d,
+  };
+
   const jobs: Job[] = [
     {
       id: 'job-1',
@@ -488,7 +577,7 @@ export function makeSeedDb(): DemoDb {
   ];
 
   return {
-    users: { 'employer-1': employer1, 'provider-1': provider1, 'employer-2': employer2 },
+    users: { 'employer-1': employer1, 'provider-1': provider1, 'employer-2': employer2, 'provider-2': provider2, 'provider-3': provider3, 'provider-4': provider4 },
     jobs,
     chats,
     notifications,

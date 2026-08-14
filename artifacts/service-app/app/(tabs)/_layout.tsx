@@ -20,6 +20,10 @@ function NativeTabLayout() {
         <Icon sf={{ default: 'house', selected: 'house.fill' }} />
         <Label>Home</Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="providers">
+        <Icon sf={{ default: 'person.2', selected: 'person.2.fill' }} />
+        <Label>Providers</Label>
+      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="jobs">
         <Icon sf={{ default: 'briefcase', selected: 'briefcase.fill' }} />
         <Label>Jobs</Label>
@@ -76,6 +80,18 @@ function ClassicTabLayout() {
               <SymbolView name="house" tintColor={color} size={24} />
             ) : (
               <Feather name="home" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="providers"
+        options={{
+          title: 'Providers',
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="person.2" tintColor={color} size={24} />
+            ) : (
+              <Feather name="users" size={22} color={color} />
             ),
         }}
       />

@@ -96,14 +96,41 @@ service cloud.firestore {
     }
 
     // ---------- Chats ----------
+
+    // Resolves the other participant in a 2-person chat given the caller's uid.
+    function otherParticipant(participants) {
+      return participants[0] == request.auth.uid
+        ? participants[1]
+        : participants[0];
+    }
+
     match /chats/{chatId} {
       allow read: if signedIn()
         && request.auth.uid in resource.data.participants;
-      // Chat creation is done by the accepting provider; they must be in participants
-      // and the list must have exactly 2 entries (employer + provider).
+
       allow create: if signedIn()
         && request.auth.uid in request.resource.data.participants
-        && request.resource.data.participants.size() == 2;
+        && request.resource.data.participants.size() == 2
+        // No self-chat.
+        && request.resource.data.participants[0] != request.resource.data.participants[1]
+        && (
+          // --- Job-linked chat: any participant initiates (provider accepts a job). ---
+          (request.resource.data.jobId != ''
+            // Verify the job exists and the caller is a participant.
+            && get(/databases/$(database)/documents/jobs/$(request.resource.data.jobId)).data.employerId
+                in request.resource.data.participants)
+          ||
+          // --- Direct chat: employer contacts a provider (no job attached). ---
+          (request.resource.data.jobId == ''
+            // Caller must be an employer.
+            && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'employer'
+            // The other participant must be a provider.
+            && get(/databases/$(database)/documents/users/$(
+                otherParticipant(request.resource.data.participants)
+               )).data.role == 'provider'
+          )
+        );
+
       // Participants may update chat metadata (lastMessage, lastReadAt, etc.)
       // but cannot alter the participant list itself.
       allow update: if signedIn()
