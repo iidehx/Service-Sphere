@@ -1,9 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Google from 'expo-auth-session/providers/google';
-import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import { Redirect } from 'expo-router';
 import { AppLogo, Card, Field, GhostButton, PrimaryButton, Screen } from '@/components/AppPrimitives';
@@ -68,6 +67,7 @@ export default function AuthScreen() {
     registerWithEmail,
     loginWithEmail,
     loginWithGoogleIdToken,
+    loginWithGooglePopup,
     completeRoleSelection,
     resetPassword,
     demoSignIn,
@@ -85,13 +85,10 @@ export default function AuthScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const intentRef = useRef<GoogleIntent>('login');
 
-  // Explicitly set the redirect URI so it matches exactly what's registered
-  // in Google Cloud Console → OAuth client → Authorized redirect URIs.
-  const redirectUri = AuthSession.makeRedirectUri({ useProxy: false });
-
+  // Native only: expo-auth-session Google flow.
+  // On web we use Firebase signInWithPopup instead (no redirect URI config needed).
   const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
     clientId: googleWebClientId || 'unconfigured.apps.googleusercontent.com',
-    redirectUri,
   });
 
   useEffect(() => {
@@ -135,6 +132,14 @@ export default function AuthScreen() {
       return;
     }
     intentRef.current = intent;
+    // On web use Firebase signInWithPopup — it handles the redirect URI
+    // internally so no Google Console redirect URI config is needed.
+    if (Platform.OS === 'web') {
+      const err = await loginWithGooglePopup(intent);
+      if (err) setErrors({ form: err });
+      return;
+    }
+    // On native use expo-auth-session.
     try {
       await promptAsync();
     } catch {

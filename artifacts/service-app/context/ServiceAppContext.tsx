@@ -7,6 +7,7 @@ import {
   sendPasswordResetEmail,
   signInWithCredential,
   signInWithEmailAndPassword,
+  signInWithPopup,
   signOut as fbSignOut,
   updateProfile as updateAuthProfile,
 } from 'firebase/auth';
@@ -92,6 +93,7 @@ type ServiceAppContextValue = {
   registerWithEmail: (name: string, email: string, password: string, role: Role) => Promise<string | null>;
   loginWithEmail: (email: string, password: string) => Promise<string | null>;
   loginWithGoogleIdToken: (idToken: string, intent: GoogleIntent) => Promise<string | null>;
+  loginWithGooglePopup: (intent: GoogleIntent) => Promise<string | null>;
   completeRoleSelection: (role: Role) => Promise<string | null>;
   resetPassword: (email: string) => Promise<string | null>;
   signOutUser: () => Promise<void>;
@@ -585,6 +587,24 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
     try {
       const { auth } = getFirebase();
       await signInWithCredential(auth, GoogleAuthProvider.credential(idToken));
+      return null;
+    } catch (e) {
+      googleIntent.current = null;
+      return friendlyError(e);
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  // Web-only: uses Firebase signInWithPopup which handles the OAuth redirect
+  // internally (no redirect URI configuration needed in Google Cloud Console).
+  const loginWithGooglePopup = async (intent: GoogleIntent) => {
+    if (mode === 'demo') return 'Google sign-in becomes available once Firebase is connected.';
+    setAuthBusy(true);
+    googleIntent.current = intent;
+    try {
+      const { auth } = getFirebase();
+      await signInWithPopup(auth, new GoogleAuthProvider());
       return null;
     } catch (e) {
       googleIntent.current = null;
@@ -1553,6 +1573,7 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
       registerWithEmail,
       loginWithEmail,
       loginWithGoogleIdToken,
+      loginWithGooglePopup,
       completeRoleSelection,
       resetPassword,
       signOutUser,
