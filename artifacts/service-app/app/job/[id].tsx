@@ -1,74 +1,437 @@
-import React, { useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import React, { useMemo, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import {
+  Avatar,
+  Card,
+  EmptyState,
+  GhostButton,
+  HeaderBar,
+  KeyValueRow,
+  PayBadge,
+  PrimaryButton,
+  Screen,
+  StatusBadge,
+} from '@/components/AppPrimitives';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
+import {
+  CATEGORY_ICONS,
+  chatIdForJob,
+  PLATFORM_FEE_RATE,
+  round2,
+  timeAgo,
+  useServiceApp,
+} from '@/context/ServiceAppContext';
 import { useColors } from '@/hooks/useColors';
-import { Field, GhostButton, Pill, PrimaryButton, Screen, StatusBadge } from '@/components/AppPrimitives';
-import { useServiceApp } from '@/context/ServiceAppContext';
+
+const STEPS = ['Posted', 'Accepted', 'Quote agreed', 'Completed'];
+
+function Timeline({ statusIndex }: { statusIndex: number }) {
+  const colors = useColors();
+  return (
+    <View style={styles.timeline}>
+      {STEPS.map((step, i) => {
+        const done = i <= statusIndex;
+        const current = i === statusIndex;
+        return (
+          <React.Fragment key={step}>
+            {i > 0 ? (
+              <View style={[styles.timelineLine, { backgroundColor: i <= statusIndex ? colors.primary : colors.muted }]} />
+            ) : null}
+            <View style={styles.timelineStep}>
+              <View
+                style={[
+                  styles.timelineDot,
+                  {
+                    backgroundColor: done ? colors.primary : colors.card,
+                    borderColor: done ? colors.primary : colors.input,
+                  },
+                  current ? { borderColor: colors.accent, borderWidth: 2 } : null,
+                ]}
+              >
+                {done ? <Ionicons name="checkmark" size={11} color="#fff" /> : null}
+              </View>
+              <Text style={[styles.timelineLabel, { color: done ? colors.foreground : colors.mutedForeground }]}>{step}</Text>
+            </View>
+          </React.Fragment>
+        );
+      })}
+    </View>
+  );
+}
 
 export default function JobDetailScreen() {
   const colors = useColors();
-  const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { currentUser, jobs, chats, acceptJob, acceptQuote, proposeQuote, updatePayment, completeJob } = useServiceApp();
-  const job = jobs.find((item) => item.id === id);
-  const [showContract, setShowContract] = useState(false);
-  const [quote, setQuote] = useState(String(job?.proposedPrice ?? job?.priceOffer ?? ''));
-  const [labor, setLabor] = useState(String(job?.quoteBreakdown?.labor ?? job?.priceOffer ?? ''));
-  const [materials, setMaterials] = useState(String(job?.quoteBreakdown?.materials ?? 0));
-  const [hours, setHours] = useState(String(job?.quoteBreakdown?.expectedHours ?? 2));
-  if (!job) return <Screen><View style={styles.missing}><Ionicons name="alert-circle-outline" size={30} color={colors.mutedForeground} /><Text style={[styles.missingTitle, { color: colors.foreground }]}>Job not found</Text><GhostButton label="Go back" onPress={() => router.back()} /></View></Screen>;
-  const isEmployer = currentUser.id === job.employerId;
-  const isProvider = currentUser.id === job.employeeId || currentUser.role === 'provider';
-  const chat = chats.find((item) => item.jobId === job.id);
-  const finalPrice = job.agreedPrice ?? job.proposedPrice ?? job.priceOffer;
-  const openChat = () => router.push(`/chat/${chat?.id ?? `chat-${job.id}`}`);
-  const submitQuote = () => {
-    const proposedPrice = Number(quote) || job.priceOffer;
-    proposeQuote(job.id, proposedPrice, { labor: Number(labor) || 0, materials: Number(materials) || 0, expectedHours: Number(hours) || 0, extraFees: Math.max(0, proposedPrice - (Number(labor) || 0) - (Number(materials) || 0)) });
-    Alert.alert('Quote sent', 'The employer can now review and accept your quote.');
+  const {
+    user,
+    jobs,
+    chats,
+    toggleSaved,
+    acceptJob,
+    acceptQuote,
+    declineQuote,
+    updatePayment,
+    completeJob,
+  } = useServiceApp();
+
+  const job = useMemo(() => jobs.find((j) => j.id === id), [jobs, id]);
+  const [confirm, setConfirm] = useState<null | 'acceptQuote' | 'complete' | 'paid' | 'refund' | 'acceptJob'>(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  if (!user) return null;
+  if (!job) {
+    return (
+      <Screen>
+        <HeaderBar title="Job details" onBack={() => router.back()} />
+        <EmptyState icon="alert-circle-outline" title="Job not found" body="It may have been removed, or it hasn't synced yet." />
+      </Screen>
+    );
+  }
+
+  const isEmployerOnJob = job.employerId === user.id;
+  const isProviderOnJob = job.employeeId === user.id;
+  const isParticipant = isEmployerOnJob || isProviderOnJob;
+  const statusIndex = job.status === 'open' ? 0 : job.status === 'negotiating' ? 1 : job.status === 'accepted' ? 2 : 3;
+  const saved = user.savedJobIds.includes(job.id);
+  const chatId = chatIdForJob(job.id);
+  const hasChat = chats.some((c) => c.id === chatId);
+  const fee = job.proposedPrice ? round2(job.proposedPrice * PLATFORM_FEE_RATE) : 0;
+  const myAccepted = isEmployerOnJob ? job.employerQuoteAccepted : job.employeeQuoteAccepted;
+  const otherAccepted = isEmployerOnJob ? job.employeeQuoteAccepted : job.employerQuoteAccepted;
+  const otherName = isEmployerOnJob ? job.employeeName ?? 'the provider' : job.employerName;
+  const canReview = job.status === 'completed' && isParticipant && !!job.employeeId && !job.reviewedBy.includes(user.id);
+
+  const run = async (fn: () => Promise<string | null>) => {
+    setBusy(true);
+    setError('');
+    const err = await fn();
+    setBusy(false);
+    if (err) setError(err);
   };
-  const report = () => Alert.alert('Report user', 'What would you like to report?', [{ text: 'Spam' }, { text: 'Safety concern', style: 'destructive' }, { text: 'Cancel', style: 'cancel' }]);
-  return <Screen><View style={[styles.topBar, { paddingTop: insets.top + 8, borderBottomColor: colors.border }]}><Pressable onPress={() => router.back()} hitSlop={10}><Ionicons name="chevron-back" size={25} color={colors.primary} /></Pressable><Text style={[styles.topTitle, { color: colors.foreground }]}>Job details</Text><Pressable onPress={report} hitSlop={10}><Ionicons name="ellipsis-horizontal" size={22} color={colors.primary} /></Pressable></View><ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 30 }]} showsVerticalScrollIndicator={false}><View style={styles.headingLine}><View style={[styles.categoryIcon, { backgroundColor: colors.secondary }]}><Ionicons name={job.category === 'Cleaning' ? 'sparkles-outline' : job.category === 'Painting' ? 'color-palette-outline' : 'construct-outline'} size={24} color={colors.primary} /></View><View style={styles.headingCopy}><Text style={[styles.category, { color: colors.mutedForeground }]}>{job.category}</Text><Text style={[styles.title, { color: colors.foreground }]}>{job.title}</Text></View><StatusBadge status={job.status} /></View><View style={styles.metaRow}><View style={styles.metaItem}><Ionicons name="calendar-outline" size={17} color={colors.accent} /><Text style={[styles.metaText, { color: colors.foreground }]}>{job.scheduledAt}</Text></View><View style={styles.metaItem}><Ionicons name="location-outline" size={17} color={colors.accent} /><Text style={[styles.metaText, { color: colors.foreground }]}>{isEmployer ? 'Your request' : 'Austin, TX'}</Text></View></View><View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}><Text style={[styles.cardTitle, { color: colors.foreground }]}>About this job</Text><Text style={[styles.body, { color: colors.mutedForeground }]}>{job.details}</Text></View><View style={[styles.priceCard, { backgroundColor: colors.secondary }]}><View><Text style={[styles.priceLabel, { color: colors.mutedForeground }]}>{job.agreedPrice ? 'Agreed price' : 'Employer budget'}</Text><Text style={[styles.price, { color: colors.primary }]}>${finalPrice}</Text></View>{job.platformFee ? <View style={styles.fee}><Text style={[styles.priceLabel, { color: colors.mutedForeground }]}>Platform fee</Text><Text style={[styles.feeText, { color: colors.foreground }]}>${job.platformFee.toFixed(2)} · 5%</Text></View> : null}</View>{job.status === 'negotiating' && job.proposedPrice ? <View style={[styles.quoteCard, { backgroundColor: colors.card, borderColor: colors.accent }]}><View style={styles.quoteHeader}><View><Text style={[styles.cardTitle, { color: colors.foreground }]}>Quote ready to review</Text><Text style={[styles.body, { color: colors.mutedForeground }]}>${job.proposedPrice} total · {job.quoteBreakdown?.expectedHours ?? 0} expected hours</Text></View><Ionicons name="document-text-outline" size={23} color={colors.accent} /></View><View style={styles.breakdown}><Text style={[styles.breakdownText, { color: colors.mutedForeground }]}>Labor <Text style={{ color: colors.foreground }}>${job.quoteBreakdown?.labor ?? 0}</Text></Text><Text style={[styles.breakdownText, { color: colors.mutedForeground }]}>Materials <Text style={{ color: colors.foreground }}>${job.quoteBreakdown?.materials ?? 0}</Text></Text><Text style={[styles.breakdownText, { color: colors.mutedForeground }]}>Extra fees <Text style={{ color: colors.foreground }}>${job.quoteBreakdown?.extraFees ?? 0}</Text></Text></View><View style={styles.acceptLine}><Text style={[styles.acceptState, { color: colors.mutedForeground }]}>{isEmployer ? job.employerQuoteAccepted ? 'You accepted this quote' : 'Your acceptance is needed' : job.employeeQuoteAccepted ? 'You accepted this quote' : 'Your acceptance is needed'}</Text><PrimaryButton label={isEmployer ? (job.employerQuoteAccepted ? 'Accepted' : 'Accept quote') : (job.employeeQuoteAccepted ? 'Accepted' : 'Accept quote')} onPress={() => acceptQuote(job.id)} disabled={isEmployer ? !!job.employerQuoteAccepted : !!job.employeeQuoteAccepted} icon="checkmark" /></View></View> : null}{currentUser.role === 'provider' && job.status === 'negotiating' ? <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}><Text style={[styles.cardTitle, { color: colors.foreground }]}>Make a clear offer</Text><Text style={[styles.body, { color: colors.mutedForeground }]}>A simple breakdown helps both sides feel confident before work begins.</Text><View style={styles.twoCol}><Field label="Total" keyboardType="decimal-pad" value={quote} onChangeText={setQuote} /><Field label="Labor" keyboardType="decimal-pad" value={labor} onChangeText={setLabor} /></View><View style={styles.twoCol}><Field label="Materials" keyboardType="decimal-pad" value={materials} onChangeText={setMaterials} /><Field label="Hours" keyboardType="decimal-pad" value={hours} onChangeText={setHours} /></View><PrimaryButton label="Send updated quote" onPress={submitQuote} icon="paper-plane-outline" /></View> : null}<View style={styles.actions}>{job.status === 'open' && currentUser.role === 'provider' ? <PrimaryButton label="Accept and start chat" onPress={() => { acceptJob(job.id); router.push(`/chat/chat-${job.id}`); }} icon="chatbubble-ellipses-outline" /> : null}{job.status === 'negotiating' || job.status === 'accepted' ? <GhostButton label="Open conversation" onPress={openChat} icon="chatbubble-ellipses-outline" /> : null}{job.status === 'accepted' && isEmployer ? <><GhostButton label={job.paymentStatus === 'paid' ? 'Payment marked paid' : 'Mark payment paid'} onPress={() => updatePayment(job.id, 'paid')} icon="checkmark-circle-outline" /><GhostButton label="View contract" onPress={() => setShowContract(true)} icon="document-text-outline" /><PrimaryButton label="Mark work complete" onPress={() => completeJob(job.id)} icon="flag-outline" /></> : null}{job.status === 'completed' ? <><View style={[styles.completeNote, { backgroundColor: '#E8F2EC' }]}><Ionicons name="checkmark-circle" size={18} color="#2E6A43" /><Text style={styles.completeText}>This job is complete. Thank you for using Service App.</Text></View><PrimaryButton label="Leave a review" onPress={() => router.push(`/review/${job.id}`)} icon="star-outline" /></> : null}</View></ScrollView><Modal visible={showContract} transparent animationType="slide" onRequestClose={() => setShowContract(false)}><View style={styles.modalBackdrop}><View style={[styles.contract, { backgroundColor: colors.card }]}><View style={styles.modalHeader}><Text style={[styles.modalTitle, { color: colors.foreground }]}>Service contract</Text><Pressable onPress={() => setShowContract(false)}><Ionicons name="close" size={23} color={colors.primary} /></Pressable></View><Text style={[styles.body, { color: colors.mutedForeground }]}>Both parties accepted the quote for this job. Keep this summary handy in chat.</Text><View style={[styles.contractLine, { borderBottomColor: colors.border }]}><Text style={[styles.body, { color: colors.mutedForeground }]}>Agreed price</Text><Text style={[styles.contractValue, { color: colors.primary }]}>${finalPrice}</Text></View><View style={[styles.contractLine, { borderBottomColor: colors.border }]}><Text style={[styles.body, { color: colors.mutedForeground }]}>Platform fee (5%)</Text><Text style={[styles.contractValue, { color: colors.foreground }]}>${job.platformFee?.toFixed(2) ?? '0.00'}</Text></View><View style={[styles.contractLine, { borderBottomColor: colors.border }]}><Text style={[styles.body, { color: colors.mutedForeground }]}>Payment</Text><Text style={[styles.contractValue, { color: colors.foreground }]}>{job.paymentStatus}</Text></View><PrimaryButton label="Done" onPress={() => setShowContract(false)} /></View></View></Modal></Screen>;
+
+  const doAcceptJob = async () => {
+    setBusy(true);
+    setError('');
+    const res = await acceptJob(job.id);
+    setBusy(false);
+    if (res.error) setError(res.error);
+    else if (res.chatId) router.push({ pathname: '/chat/[id]', params: { id: res.chatId } });
+  };
+
+  return (
+    <Screen>
+      <HeaderBar
+        title="Job details"
+        onBack={() => router.back()}
+        right={
+          user.role === 'provider' && !isEmployerOnJob ? (
+            <Pressable hitSlop={10} testID="detail-save" onPress={() => toggleSaved(job.id)}>
+              <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={21} color={saved ? colors.accent : colors.primary} />
+            </Pressable>
+          ) : undefined
+        }
+      />
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <Card style={{ gap: 12 }}>
+          <Timeline statusIndex={statusIndex} />
+        </Card>
+
+        <Card style={{ gap: 12, marginTop: 12 }}>
+          <View style={styles.titleRow}>
+            <View style={[styles.categoryIcon, { backgroundColor: colors.primarySoft }]}>
+              <Ionicons name={CATEGORY_ICONS[job.category] ?? 'ellipsis-horizontal-circle'} size={19} color={colors.primary} />
+            </View>
+            <View style={{ flex: 1, gap: 3 }}>
+              <Text style={[styles.title, { color: colors.foreground }]} testID="job-title">
+                {job.title}
+              </Text>
+              <Text style={[styles.meta, { color: colors.mutedForeground }]}>
+                {job.category} · Posted {timeAgo(job.createdAtMs)}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.badgeRow}>
+            <StatusBadge status={job.status} />
+            {job.status === 'accepted' || job.status === 'completed' ? <PayBadge status={job.paymentStatus} /> : null}
+          </View>
+          <View style={[styles.infoStrip, { backgroundColor: colors.background }]}>
+            <View style={styles.infoItem}>
+              <Text style={[styles.infoLabel, { color: colors.mutedForeground }]}>
+                {job.agreedPrice ? 'Agreed price' : job.proposedPrice ? 'Latest quote' : 'Price offer'}
+              </Text>
+              <Text style={[styles.infoValue, { color: colors.foreground }]}>
+                ${job.agreedPrice ?? job.proposedPrice ?? job.priceOffer}
+              </Text>
+            </View>
+            <View style={[styles.infoDivider, { backgroundColor: colors.border }]} />
+            <View style={[styles.infoItem, { flex: 1.6 }]}>
+              <Text style={[styles.infoLabel, { color: colors.mutedForeground }]}>Schedule</Text>
+              <Text style={[styles.infoValue, { color: colors.foreground, fontSize: 13.5 }]} numberOfLines={2}>
+                {job.leaveTimeToEmployee ? 'Provider suggests a time' : job.scheduledAt || 'Not set'}
+              </Text>
+            </View>
+          </View>
+          <Text style={[styles.details, { color: colors.mutedForeground }]}>{job.details}</Text>
+        </Card>
+
+        <Card style={{ gap: 4, marginTop: 12 }}>
+          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>People</Text>
+          <Pressable
+            testID="person-employer"
+            onPress={() => router.push({ pathname: '/user/[id]', params: { id: job.employerId } })}
+            style={({ pressed }) => [styles.personRow, { opacity: pressed ? 0.7 : 1 }]}
+          >
+            <Avatar name={job.employerName} size={40} />
+            <View style={{ flex: 1, gap: 1 }}>
+              <Text style={[styles.personName, { color: colors.foreground }]}>{job.employerName}</Text>
+              <Text style={[styles.personRole, { color: colors.mutedForeground }]}>Employer</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={colors.mutedForeground} />
+          </Pressable>
+          {job.employeeId && job.employeeName ? (
+            <Pressable
+              testID="person-provider"
+              onPress={() => router.push({ pathname: '/user/[id]', params: { id: job.employeeId as string } })}
+              style={({ pressed }) => [styles.personRow, { opacity: pressed ? 0.7 : 1 }]}
+            >
+              <Avatar name={job.employeeName} size={40} />
+              <View style={{ flex: 1, gap: 1 }}>
+                <Text style={[styles.personName, { color: colors.foreground }]}>{job.employeeName}</Text>
+                <Text style={[styles.personRole, { color: colors.mutedForeground }]}>Service provider</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={colors.mutedForeground} />
+            </Pressable>
+          ) : (
+            <View style={styles.personRow}>
+              <View style={[styles.pendingIcon, { backgroundColor: colors.warningSoft }]}>
+                <Ionicons name="hourglass-outline" size={16} color={colors.warning} />
+              </View>
+              <Text style={[styles.personRole, { color: colors.mutedForeground, flex: 1 }]}>
+                Waiting for a provider to accept
+              </Text>
+            </View>
+          )}
+        </Card>
+
+        {job.proposedPrice && job.quoteBreakdown ? (
+          <Card style={{ gap: 6, marginTop: 12 }}>
+            <View style={styles.quoteHeader}>
+              <Ionicons name="pricetag-outline" size={16} color={colors.accent} />
+              <Text style={[styles.sectionLabelStrong, { color: colors.foreground }]}>Quote</Text>
+              <Text style={[styles.quoteBy, { color: colors.mutedForeground }]}>
+                by {job.quoteBy === job.employerId ? job.employerName : job.employeeName ?? 'provider'}
+              </Text>
+            </View>
+            <KeyValueRow label="Labor" value={`$${job.quoteBreakdown.labor}`} />
+            <KeyValueRow label="Materials" value={`$${job.quoteBreakdown.materials}`} />
+            <KeyValueRow label="Expected hours" value={`${job.quoteBreakdown.expectedHours} h`} />
+            <KeyValueRow label="Extra fees" value={`$${job.quoteBreakdown.extraFees}`} />
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+            <KeyValueRow label="Total" value={`$${job.proposedPrice}`} strong />
+            {job.status === 'negotiating' && isParticipant ? (
+              <View style={{ gap: 10, marginTop: 6 }}>
+                <View style={styles.acceptRow}>
+                  <Ionicons
+                    name={myAccepted ? 'checkmark-circle' : 'ellipse-outline'}
+                    size={15}
+                    color={myAccepted ? colors.success : colors.mutedForeground}
+                  />
+                  <Text style={[styles.acceptText, { color: colors.mutedForeground }]}>
+                    You {myAccepted ? 'accepted' : "haven't accepted yet"}
+                  </Text>
+                  <Ionicons
+                    name={otherAccepted ? 'checkmark-circle' : 'ellipse-outline'}
+                    size={15}
+                    color={otherAccepted ? colors.success : colors.mutedForeground}
+                  />
+                  <Text style={[styles.acceptText, { color: colors.mutedForeground }]}>
+                    {otherName} {otherAccepted ? 'accepted' : 'pending'}
+                  </Text>
+                </View>
+                {!myAccepted ? (
+                  <View style={{ flexDirection: 'row', gap: 10 }}>
+                    <PrimaryButton
+                      label={`Accept quote ($${job.proposedPrice})`}
+                      testID="accept-quote"
+                      onPress={() => setConfirm('acceptQuote')}
+                      style={{ flex: 1 }}
+                      loading={busy}
+                    />
+                    {job.quoteBy !== user.id ? (
+                      <GhostButton label="Decline" tone="destructive" testID="decline-quote" onPress={() => run(() => declineQuote(job.id))} />
+                    ) : null}
+                  </View>
+                ) : (
+                  <Text style={[styles.waiting, { color: colors.mutedForeground }]}>
+                    Waiting for {otherName} to confirm the quote.
+                  </Text>
+                )}
+              </View>
+            ) : null}
+          </Card>
+        ) : null}
+
+        {job.agreedPrice ? (
+          <Card style={{ gap: 6, marginTop: 12 }}>
+            <Text style={[styles.sectionLabelStrong, { color: colors.foreground }]}>Payment</Text>
+            <KeyValueRow label="Agreed price" value={`$${job.agreedPrice}`} strong />
+            <KeyValueRow label="Platform fee (5%, provider)" value={`−$${job.platformFee ?? round2(job.agreedPrice * PLATFORM_FEE_RATE)}`} />
+            <KeyValueRow
+              label="Provider receives"
+              value={`$${round2(job.agreedPrice - (job.platformFee ?? round2(job.agreedPrice * PLATFORM_FEE_RATE)))}`}
+            />
+            <View style={styles.badgeRow}>
+              <PayBadge status={job.paymentStatus} />
+              <Text style={[styles.payNote, { color: colors.mutedForeground }]}>
+                Payment happens outside the app (cash or transfer).
+              </Text>
+            </View>
+            {isEmployerOnJob ? (
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 6 }}>
+                {job.paymentStatus === 'pending' ? (
+                  <GhostButton label="Mark as paid" icon="cash-outline" testID="mark-paid" onPress={() => setConfirm('paid')} style={{ flex: 1 }} />
+                ) : null}
+                {job.paymentStatus === 'paid' ? (
+                  <GhostButton label="Mark refunded" tone="destructive" testID="mark-refunded" onPress={() => setConfirm('refund')} style={{ flex: 1 }} />
+                ) : null}
+              </View>
+            ) : null}
+          </Card>
+        ) : null}
+
+        {error ? <Text style={[styles.error, { color: colors.destructive }]}>{error}</Text> : null}
+
+        <View style={{ gap: 10, marginTop: 16 }}>
+          {user.role === 'provider' && job.status === 'open' && !isEmployerOnJob ? (
+            <>
+              <PrimaryButton label="Accept job & start chat" icon="chatbubbles-outline" testID="accept-job" onPress={() => setConfirm('acceptJob')} loading={busy} />
+              <Text style={[styles.feeHint, { color: colors.mutedForeground }]}>
+                Free to accept. A 5% platform fee applies only to the final agreed price.
+              </Text>
+            </>
+          ) : null}
+          {hasChat && isParticipant ? (
+            <GhostButton
+              label="Open conversation"
+              icon="chatbubble-ellipses-outline"
+              testID="open-chat"
+              onPress={() => router.push({ pathname: '/chat/[id]', params: { id: chatId } })}
+            />
+          ) : null}
+          {isEmployerOnJob && job.status === 'accepted' ? (
+            <PrimaryButton label="Mark job as completed" icon="checkmark-done-outline" testID="complete-job" onPress={() => setConfirm('complete')} loading={busy} />
+          ) : null}
+          {canReview ? (
+            <PrimaryButton
+              label={`Rate ${isEmployerOnJob ? job.employeeName : job.employerName}`}
+              icon="star-outline"
+              testID="leave-review"
+              onPress={() => router.push({ pathname: '/review/[id]', params: { id: job.id } })}
+            />
+          ) : null}
+          {job.status === 'completed' && isParticipant && job.reviewedBy.includes(user.id) ? (
+            <Text style={[styles.waiting, { color: colors.mutedForeground, textAlign: 'center' }]}>
+              Thanks — you already left a review for this job.
+            </Text>
+          ) : null}
+        </View>
+      </ScrollView>
+
+      <ConfirmDialog
+        visible={confirm === 'acceptJob'}
+        title="Accept this job?"
+        body={`You'll start a conversation with ${job.employerName} to agree on the details and price.`}
+        confirmLabel="Accept job"
+        onConfirm={() => {
+          setConfirm(null);
+          doAcceptJob();
+        }}
+        onCancel={() => setConfirm(null)}
+      />
+      <ConfirmDialog
+        visible={confirm === 'acceptQuote'}
+        title="Accept this quote?"
+        body={`You're agreeing to "${job.title}" at $${job.proposedPrice}. After the 5% platform fee ($${fee}), the provider receives $${round2((job.proposedPrice ?? 0) - fee)}. When both sides accept, the job is confirmed.`}
+        confirmLabel="Accept quote"
+        onConfirm={() => {
+          setConfirm(null);
+          run(() => acceptQuote(job.id));
+        }}
+        onCancel={() => setConfirm(null)}
+      />
+      <ConfirmDialog
+        visible={confirm === 'complete'}
+        title="Mark as completed?"
+        body="Confirm the work is done. Both sides will then be able to leave a review."
+        confirmLabel="Mark completed"
+        onConfirm={() => {
+          setConfirm(null);
+          run(() => completeJob(job.id));
+        }}
+        onCancel={() => setConfirm(null)}
+      />
+      <ConfirmDialog
+        visible={confirm === 'paid'}
+        title="Mark payment as paid?"
+        body={`Confirm you've paid $${job.agreedPrice} to ${job.employeeName ?? 'the provider'} outside the app.`}
+        confirmLabel="Mark paid"
+        onConfirm={() => {
+          setConfirm(null);
+          run(() => updatePayment(job.id, 'paid'));
+        }}
+        onCancel={() => setConfirm(null)}
+      />
+      <ConfirmDialog
+        visible={confirm === 'refund'}
+        title="Mark as refunded?"
+        body="Use this only if the payment was returned to you."
+        confirmLabel="Mark refunded"
+        destructive
+        onConfirm={() => {
+          setConfirm(null);
+          run(() => updatePayment(job.id, 'refunded'));
+        }}
+        onCancel={() => setConfirm(null)}
+      />
+    </Screen>
+  );
 }
 
 const styles = StyleSheet.create({
-  topBar: { paddingHorizontal: 20, paddingBottom: 13, borderBottomWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  topTitle: { fontFamily: 'Inter_700Bold', fontSize: 16 },
-  content: { padding: 20, gap: 16 },
-  headingLine: { flexDirection: 'row', alignItems: 'center', gap: 11 },
-  categoryIcon: { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  headingCopy: { flex: 1, gap: 4 },
-  category: { fontFamily: 'Inter_600SemiBold', fontSize: 11 },
-  title: { fontFamily: 'Inter_700Bold', fontSize: 20, lineHeight: 25 },
-  metaRow: { flexDirection: 'row', gap: 18, flexWrap: 'wrap' },
-  metaItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  metaText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
-  card: { borderWidth: 1, borderRadius: 12, padding: 15, gap: 10 },
-  cardTitle: { fontFamily: 'Inter_700Bold', fontSize: 14 },
-  body: { fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 19 },
-  priceCard: { padding: 16, borderRadius: 12, flexDirection: 'row', alignItems: 'center' },
-  priceLabel: { fontFamily: 'Inter_500Medium', fontSize: 11 },
-  price: { fontFamily: 'Inter_700Bold', fontSize: 26, marginTop: 2 },
-  fee: { flex: 1, alignItems: 'flex-end', gap: 3 },
-  feeText: { fontFamily: 'Inter_700Bold', fontSize: 13 },
-  quoteCard: { borderWidth: 1.5, borderRadius: 12, padding: 15, gap: 13 },
-  quoteHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  breakdown: { flexDirection: 'row', gap: 13, flexWrap: 'wrap' },
-  breakdownText: { fontFamily: 'Inter_400Regular', fontSize: 11 },
-  acceptLine: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  acceptState: { flex: 1, fontFamily: 'Inter_500Medium', fontSize: 11 },
-  twoCol: { flexDirection: 'row', gap: 10 },
-  actions: { gap: 10 },
-  completeNote: { borderRadius: 10, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  completeText: { flex: 1, color: '#2E6A43', fontFamily: 'Inter_600SemiBold', fontSize: 12 },
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(15,23,42,0.48)', justifyContent: 'flex-end' },
-  contract: { borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 22, gap: 16 },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  modalTitle: { fontFamily: 'Inter_700Bold', fontSize: 20 },
-  contractLine: { paddingVertical: 12, borderBottomWidth: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  contractValue: { fontFamily: 'Inter_700Bold', fontSize: 15 },
-  missing: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14 },
-  missingTitle: { fontFamily: 'Inter_700Bold', fontSize: 18 },
+  scroll: { padding: 18, paddingBottom: 60, maxWidth: 640, width: '100%', alignSelf: 'center' },
+  timeline: { flexDirection: 'row', alignItems: 'flex-start' },
+  timelineStep: { alignItems: 'center', gap: 5, width: 74 },
+  timelineDot: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  timelineLine: { flex: 1, height: 2, marginTop: 10, marginHorizontal: -14 },
+  timelineLabel: { fontFamily: 'Inter_500Medium', fontSize: 10.5, textAlign: 'center' },
+  titleRow: { flexDirection: 'row', gap: 12, alignItems: 'center' },
+  categoryIcon: { width: 42, height: 42, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  title: { fontFamily: 'Inter_700Bold', fontSize: 17, lineHeight: 23 },
+  meta: { fontFamily: 'Inter_400Regular', fontSize: 12 },
+  badgeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  infoStrip: { flexDirection: 'row', borderRadius: 10, padding: 12, gap: 12, alignItems: 'center' },
+  infoItem: { flex: 1, gap: 3 },
+  infoLabel: { fontFamily: 'Inter_500Medium', fontSize: 11 },
+  infoValue: { fontFamily: 'Inter_700Bold', fontSize: 16 },
+  infoDivider: { width: 1, alignSelf: 'stretch' },
+  details: { fontFamily: 'Inter_400Regular', fontSize: 13.5, lineHeight: 20 },
+  sectionLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
+  sectionLabelStrong: { fontFamily: 'Inter_700Bold', fontSize: 14.5 },
+  personRow: { flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 8 },
+  personName: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
+  personRole: { fontFamily: 'Inter_400Regular', fontSize: 12 },
+  pendingIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  quoteHeader: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  quoteBy: { fontFamily: 'Inter_400Regular', fontSize: 12, marginLeft: 'auto' },
+  divider: { height: 1, marginVertical: 4 },
+  acceptRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
+  acceptText: { fontFamily: 'Inter_500Medium', fontSize: 12, marginRight: 8 },
+  waiting: { fontFamily: 'Inter_500Medium', fontSize: 12.5 },
+  payNote: { fontFamily: 'Inter_400Regular', fontSize: 11.5, flex: 1 },
+  error: { fontFamily: 'Inter_500Medium', fontSize: 13, marginTop: 12 },
+  feeHint: { fontFamily: 'Inter_400Regular', fontSize: 11.5, textAlign: 'center' },
 });

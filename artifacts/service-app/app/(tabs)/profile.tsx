@@ -1,46 +1,278 @@
-import React from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { router } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import React, { useEffect, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import { Avatar, Card, GhostButton, Screen, SectionTitle, Stars } from '@/components/AppPrimitives';
+import { Review, timeAgo, useServiceApp } from '@/context/ServiceAppContext';
 import { useColors } from '@/hooks/useColors';
-import { AppLogo, GhostButton, PrimaryButton, SectionTitle } from '@/components/AppPrimitives';
-import { Role, useServiceApp } from '@/context/ServiceAppContext';
+
+function SettingsRow({
+  icon,
+  label,
+  value,
+  onPress,
+  tone = 'default',
+  right,
+  testID,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value?: string;
+  onPress?: () => void;
+  tone?: 'default' | 'destructive';
+  right?: React.ReactNode;
+  testID?: string;
+}) {
+  const colors = useColors();
+  const tint = tone === 'destructive' ? colors.destructive : colors.primary;
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={!onPress}
+      testID={testID}
+      style={({ pressed }) => [styles.settingsRow, { opacity: pressed && onPress ? 0.7 : 1 }]}
+    >
+      <View style={[styles.settingsIcon, { backgroundColor: tone === 'destructive' ? colors.destructiveSoft : colors.primarySoft }]}>
+        <Ionicons name={icon} size={16} color={tint} />
+      </View>
+      <Text style={[styles.settingsLabel, { color: tone === 'destructive' ? colors.destructive : colors.foreground }]}>
+        {label}
+      </Text>
+      <View style={styles.settingsRight}>
+        {value ? <Text style={[styles.settingsValue, { color: colors.mutedForeground }]}>{value}</Text> : null}
+        {right ?? (onPress ? <Ionicons name="chevron-forward" size={16} color={colors.mutedForeground} /> : null)}
+      </View>
+    </Pressable>
+  );
+}
+
+function BlockedRow({ userId }: { userId: string }) {
+  const colors = useColors();
+  const { getUserProfile, unblockUser } = useServiceApp();
+  const [name, setName] = useState('User');
+  useEffect(() => {
+    getUserProfile(userId).then((p) => p && setName(p.name));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
+  return (
+    <View style={styles.blockedRow}>
+      <Avatar name={name} size={32} />
+      <Text style={[styles.blockedName, { color: colors.foreground }]}>{name}</Text>
+      <Pressable onPress={() => unblockUser(userId)} hitSlop={8}>
+        <Text style={[styles.unblock, { color: colors.primary }]}>Unblock</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function ReviewItem({ review }: { review: Review }) {
+  const colors = useColors();
+  return (
+    <Card style={{ gap: 7, marginBottom: 10 }}>
+      <View style={styles.reviewTop}>
+        <Text style={[styles.reviewName, { color: colors.foreground }]}>{review.reviewerName}</Text>
+        <Text style={[styles.reviewTime, { color: colors.mutedForeground }]}>{timeAgo(review.createdAtMs)}</Text>
+      </View>
+      <Stars value={review.rating} size={13} />
+      {review.tags.length > 0 ? (
+        <View style={styles.tagRow}>
+          {review.tags.map((t) => (
+            <View key={t} style={[styles.tag, { backgroundColor: colors.primarySoft }]}>
+              <Text style={[styles.tagText, { color: colors.primary }]}>{t}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+      {review.comment ? (
+        <Text style={[styles.reviewComment, { color: colors.mutedForeground }]}>{review.comment}</Text>
+      ) : null}
+      <Text style={[styles.reviewJob, { color: colors.mutedForeground }]}>Job: {review.jobTitle}</Text>
+    </Card>
+  );
+}
 
 export default function ProfileScreen() {
   const colors = useColors();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { currentUser, switchRole, signOut } = useServiceApp();
-  const provider = currentUser.role === 'provider';
-  const changeRole = async (role: Role) => { await switchRole(role); };
-  const logout = () => Alert.alert('Sign out?', 'You can sign back in anytime.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Sign out', style: 'destructive', onPress: async () => { await signOut(); router.replace('/'); } }]);
-  return <ScrollView style={[styles.root, { backgroundColor: colors.background }]} contentContainerStyle={[styles.content, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 90 }]} showsVerticalScrollIndicator={false}><View style={styles.heading}><Text style={[styles.eyebrow, { color: colors.mutedForeground }]}>YOUR ACCOUNT</Text><Text style={[styles.title, { color: colors.foreground }]}>Profile</Text></View><View style={[styles.profileCard, { backgroundColor: colors.primary }]}><View style={[styles.avatar, { backgroundColor: colors.accent }]}><Text style={styles.avatarText}>{currentUser.name.split(' ').map((word) => word[0]).join('').slice(0, 2)}</Text></View><View style={styles.profileCopy}><Text style={styles.profileName}>{currentUser.name}</Text><Text style={styles.profileArea}>{currentUser.workArea} · {provider ? 'Service Provider' : 'Employer'}</Text><View style={styles.verified}><Ionicons name="checkmark-circle" size={15} color="#F8D49D" /><Text style={styles.verifiedText}>{currentUser.verified ? 'Verified profile' : 'Profile in progress'}</Text></View></View><Ionicons name="settings-outline" size={21} color="#FFFFFF" /></View><View style={styles.statsRow}><View style={[styles.stat, { backgroundColor: colors.card, borderColor: colors.border }]}><Text style={[styles.statNumber, { color: colors.primary }]}>{currentUser.rating}</Text><Text style={[styles.statLabel, { color: colors.mutedForeground }]}>rating</Text></View><View style={[styles.stat, { backgroundColor: colors.card, borderColor: colors.border }]}><Text style={[styles.statNumber, { color: colors.primary }]}>{currentUser.reviews}</Text><Text style={[styles.statLabel, { color: colors.mutedForeground }]}>reviews</Text></View><View style={[styles.stat, { backgroundColor: colors.card, borderColor: colors.border }]}><Text style={[styles.statNumber, { color: colors.accent }]}>{provider ? currentUser.categories.length : '5%'}</Text><Text style={[styles.statLabel, { color: colors.mutedForeground }]}>{provider ? 'services' : 'fee'}</Text></View></View><SectionTitle title="Profile details" /><Pressable style={[styles.menuRow, { backgroundColor: colors.card, borderColor: colors.border }]}><View style={[styles.menuIcon, { backgroundColor: colors.secondary }]}><Ionicons name={provider ? 'hammer-outline' : 'business-outline'} size={18} color={colors.primary} /></View><View style={styles.menuCopy}><Text style={[styles.menuTitle, { color: colors.foreground }]}>{provider ? 'Services & work area' : 'Company information'}</Text><Text style={[styles.menuBody, { color: colors.mutedForeground }]}>{provider ? currentUser.categories.join(' · ') : 'Add your business details'}</Text></View><Ionicons name="chevron-forward" size={17} color={colors.mutedForeground} /></Pressable><Pressable onPress={() => router.push('/help')} style={[styles.menuRow, { backgroundColor: colors.card, borderColor: colors.border }]}><View style={[styles.menuIcon, { backgroundColor: colors.secondary }]}><Ionicons name="help-circle-outline" size={18} color={colors.primary} /></View><View style={styles.menuCopy}><Text style={[styles.menuTitle, { color: colors.foreground }]}>Help & safety</Text><Text style={[styles.menuBody, { color: colors.mutedForeground }]}>Guides, fees, and staying safe</Text></View><Ionicons name="chevron-forward" size={17} color={colors.mutedForeground} /></Pressable><SectionTitle title="Preview the other side" /><Text style={[styles.switchHint, { color: colors.mutedForeground }]}>Switch roles to experience both sides of the marketplace.</Text><View style={styles.roleButtons}><GhostButton label={provider ? 'Use Employer view' : 'Use Provider view'} onPress={() => changeRole(provider ? 'employer' : 'provider')} icon="swap-horizontal-outline" /></View><PrimaryButton label="Sign out" onPress={logout} icon="log-out-outline" style={styles.signOut} /></ScrollView>;
+  const { mode, user, updateProfile, signOutUser, demoSignIn } = useServiceApp();
+  const [showBlocked, setShowBlocked] = useState(false);
+
+  if (!user) return null;
+  const isEmployer = user.role === 'employer';
+
+  return (
+    <Screen>
+      <ScrollView
+        contentContainerStyle={{ paddingTop: insets.top + 14, paddingBottom: insets.bottom + 120, paddingHorizontal: 18 }}
+        showsVerticalScrollIndicator={false}
+      >
+        <Card style={{ alignItems: 'center', gap: 8, marginBottom: 16 }}>
+          <Avatar name={user.name} uri={user.avatarUrl || undefined} size={72} />
+          <Text style={[styles.name, { color: colors.foreground }]} testID="profile-name">
+            {user.name}
+          </Text>
+          <View style={styles.chipRow}>
+            <View style={[styles.roleChip, { backgroundColor: colors.primarySoft }]}>
+              <Ionicons name={isEmployer ? 'briefcase' : 'construct'} size={12} color={colors.primary} />
+              <Text style={[styles.roleChipText, { color: colors.primary }]}>
+                {isEmployer ? 'Employer' : 'Service Provider'}
+              </Text>
+            </View>
+            {user.verified ? (
+              <View style={[styles.roleChip, { backgroundColor: colors.successSoft }]}>
+                <Ionicons name="shield-checkmark" size={12} color={colors.success} />
+                <Text style={[styles.roleChipText, { color: colors.success }]}>Verified</Text>
+              </View>
+            ) : null}
+            {mode === 'demo' ? (
+              <View style={[styles.roleChip, { backgroundColor: colors.accentSoft }]}>
+                <Ionicons name="flask" size={12} color={colors.accent} />
+                <Text style={[styles.roleChipText, { color: colors.accent }]}>Preview</Text>
+              </View>
+            ) : null}
+          </View>
+          <View style={styles.ratingRow}>
+            <Stars value={user.ratingAvg} size={15} />
+            <Text style={[styles.ratingText, { color: colors.mutedForeground }]}>
+              {user.ratingCount > 0 ? `${user.ratingAvg.toFixed(1)} · ${user.ratingCount} reviews` : 'No reviews yet'}
+            </Text>
+          </View>
+          {user.workArea ? (
+            <View style={styles.locationRow}>
+              <Ionicons name="location-outline" size={13} color={colors.mutedForeground} />
+              <Text style={[styles.location, { color: colors.mutedForeground }]}>{user.workArea}</Text>
+            </View>
+          ) : null}
+          {user.bio ? <Text style={[styles.bio, { color: colors.mutedForeground }]}>{user.bio}</Text> : null}
+          {!isEmployer && user.categories.length > 0 ? (
+            <View style={styles.tagRow}>
+              {user.categories.map((c) => (
+                <View key={c} style={[styles.tag, { backgroundColor: colors.primarySoft }]}>
+                  <Text style={[styles.tagText, { color: colors.primary }]}>{c}</Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+          {!isEmployer && user.priceRange ? (
+            <Text style={[styles.priceRange, { color: colors.foreground }]}>Typical rate: {user.priceRange}</Text>
+          ) : null}
+          {isEmployer && user.companyInfo ? (
+            <Text style={[styles.bio, { color: colors.mutedForeground }]}>{user.companyInfo}</Text>
+          ) : null}
+          <GhostButton label="Edit profile" icon="create-outline" testID="edit-profile" onPress={() => router.push('/profile-edit')} />
+        </Card>
+
+        <Card style={{ paddingVertical: 6, marginBottom: 16 }}>
+          <SettingsRow
+            icon="notifications-outline"
+            label="Quote notifications"
+            right={
+              <Switch
+                value={user.notifyQuotes}
+                onValueChange={(v) => {
+                  void updateProfile({ notifyQuotes: v });
+                }}
+                trackColor={{ true: colors.primary, false: colors.muted }}
+                thumbColor="#fff"
+                testID="switch-notify-quotes"
+              />
+            }
+          />
+          <SettingsRow
+            icon="remove-circle-outline"
+            label="Blocked users"
+            value={String(user.blockedUserIds.length)}
+            onPress={() => setShowBlocked((s) => !s)}
+            testID="row-blocked"
+          />
+          {showBlocked ? (
+            user.blockedUserIds.length === 0 ? (
+              <Text style={[styles.noBlocked, { color: colors.mutedForeground }]}>You haven't blocked anyone.</Text>
+            ) : (
+              user.blockedUserIds.map((id) => <BlockedRow key={id} userId={id} />)
+            )
+          ) : null}
+          <SettingsRow icon="help-buoy-outline" label="Help & safety" onPress={() => router.push('/help')} testID="row-help" />
+          <SettingsRow
+            icon="log-out-outline"
+            label="Sign out"
+            tone="destructive"
+            testID="row-signout"
+            onPress={async () => {
+              await signOutUser();
+              router.replace('/');
+            }}
+          />
+        </Card>
+
+        {mode === 'demo' ? (
+          <Card style={{ gap: 10, marginBottom: 16 }}>
+            <Text style={[styles.demoTitle, { color: colors.foreground }]}>Demo controls</Text>
+            <Text style={[styles.demoBody, { color: colors.mutedForeground }]}>
+              Switch between the two demo accounts to see both sides of a job.
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <GhostButton
+                label="Employer view"
+                icon="briefcase-outline"
+                testID="switch-employer"
+                onPress={() => demoSignIn('employer')}
+                style={{ flex: 1 }}
+              />
+              <GhostButton
+                label="Provider view"
+                icon="construct-outline"
+                testID="switch-provider"
+                onPress={() => demoSignIn('provider')}
+                style={{ flex: 1 }}
+              />
+            </View>
+          </Card>
+        ) : null}
+
+        {user.recentReviews.length > 0 ? (
+          <>
+            <SectionTitle title="Recent reviews" />
+            {user.recentReviews.map((r) => (
+              <ReviewItem key={r.id} review={r} />
+            ))}
+          </>
+        ) : null}
+      </ScrollView>
+    </Screen>
+  );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
-  content: { paddingHorizontal: 20, gap: 15 },
-  heading: { gap: 4, marginBottom: 4 },
-  eyebrow: { fontFamily: 'Inter_700Bold', fontSize: 10, letterSpacing: 1.1 },
-  title: { fontFamily: 'Inter_700Bold', fontSize: 28, letterSpacing: -0.5 },
-  profileCard: { borderRadius: 16, padding: 18, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  avatar: { width: 52, height: 52, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: '#FFFFFF', fontFamily: 'Inter_700Bold', fontSize: 18 },
-  profileCopy: { flex: 1, gap: 4 },
-  profileName: { color: '#FFFFFF', fontFamily: 'Inter_700Bold', fontSize: 17 },
-  profileArea: { color: 'rgba(255,255,255,0.68)', fontFamily: 'Inter_400Regular', fontSize: 11 },
-  verified: { flexDirection: 'row', gap: 5, alignItems: 'center', marginTop: 2 },
-  verifiedText: { color: '#F8D49D', fontFamily: 'Inter_600SemiBold', fontSize: 11 },
-  statsRow: { flexDirection: 'row', gap: 10 },
-  stat: { flex: 1, borderRadius: 11, borderWidth: 1, padding: 13, gap: 4 },
-  statNumber: { fontFamily: 'Inter_700Bold', fontSize: 21 },
-  statLabel: { fontFamily: 'Inter_500Medium', fontSize: 11 },
-  menuRow: { borderRadius: 12, borderWidth: 1, padding: 13, flexDirection: 'row', alignItems: 'center', gap: 11 },
-  menuIcon: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  menuCopy: { flex: 1, gap: 3 },
-  menuTitle: { fontFamily: 'Inter_700Bold', fontSize: 13 },
-  menuBody: { fontFamily: 'Inter_400Regular', fontSize: 11 },
-  switchHint: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18, marginTop: -8 },
-  roleButtons: { flexDirection: 'row' },
-  signOut: { marginTop: 4, backgroundColor: '#64748B' },
+  name: { fontFamily: 'Inter_700Bold', fontSize: 19 },
+  chipRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap', justifyContent: 'center' },
+  roleChip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8 },
+  roleChipText: { fontFamily: 'Inter_600SemiBold', fontSize: 11 },
+  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  ratingText: { fontFamily: 'Inter_500Medium', fontSize: 12.5 },
+  locationRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  location: { fontFamily: 'Inter_400Regular', fontSize: 12.5 },
+  bio: { fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 19, textAlign: 'center' },
+  priceRange: { fontFamily: 'Inter_600SemiBold', fontSize: 13 },
+  tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, justifyContent: 'center' },
+  tag: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: 7 },
+  tagText: { fontFamily: 'Inter_600SemiBold', fontSize: 11 },
+  settingsRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 11 },
+  settingsIcon: { width: 30, height: 30, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  settingsLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 13.5, flex: 1 },
+  settingsRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  settingsValue: { fontFamily: 'Inter_500Medium', fontSize: 12.5 },
+  blockedRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 7, paddingLeft: 42 },
+  blockedName: { fontFamily: 'Inter_500Medium', fontSize: 13, flex: 1 },
+  unblock: { fontFamily: 'Inter_600SemiBold', fontSize: 12.5 },
+  noBlocked: { fontFamily: 'Inter_400Regular', fontSize: 12.5, paddingLeft: 42, paddingBottom: 8 },
+  demoTitle: { fontFamily: 'Inter_700Bold', fontSize: 14 },
+  demoBody: { fontFamily: 'Inter_400Regular', fontSize: 12.5, lineHeight: 18 },
+  reviewTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  reviewName: { fontFamily: 'Inter_700Bold', fontSize: 13.5 },
+  reviewTime: { fontFamily: 'Inter_400Regular', fontSize: 11.5 },
+  reviewComment: { fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 19 },
+  reviewJob: { fontFamily: 'Inter_400Regular', fontSize: 11.5 },
 });

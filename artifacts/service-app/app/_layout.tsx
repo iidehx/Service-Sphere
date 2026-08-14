@@ -22,14 +22,18 @@ const queryClient = new QueryClient();
 
 function RootLayoutNav() {
   return (
-    <Stack screenOptions={{ headerBackTitle: 'Back' }}>
-      <Stack.Screen name="index" options={{ headerShown: false }} />
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="post-job" options={{ presentation: 'modal', headerShown: false }} />
-      <Stack.Screen name="job/[id]" options={{ title: 'Job details', headerShown: false }} />
-      <Stack.Screen name="chat/[id]" options={{ title: 'Conversation', headerShown: false }} />
-      <Stack.Screen name="review/[id]" options={{ presentation: 'modal', headerShown: false }} />
-      <Stack.Screen name="help" options={{ title: 'Help & safety', headerShown: false }} />
+    <Stack screenOptions={{ headerBackTitle: 'Back', headerShown: false }}>
+      <Stack.Screen name="index" />
+      <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="post-job" options={{ presentation: 'modal' }} />
+      <Stack.Screen name="job/[id]" />
+      <Stack.Screen name="chat/[id]" />
+      <Stack.Screen name="review/[id]" options={{ presentation: 'modal' }} />
+      <Stack.Screen name="user/[id]" />
+      <Stack.Screen name="notifications" />
+      <Stack.Screen name="profile-edit" options={{ presentation: 'modal' }} />
+      <Stack.Screen name="report-user" options={{ presentation: 'modal' }} />
+      <Stack.Screen name="help" />
     </Stack>
   );
 }

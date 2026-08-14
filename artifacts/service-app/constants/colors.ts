@@ -1,15 +1,6 @@
 /**
- * Semantic design tokens for the mobile app.
- *
- * These tokens mirror the naming conventions used in web artifacts (index.css)
- * so that multi-artifact projects share a cohesive visual identity.
- *
- * Replace the placeholder values below with values that match the project's
- * brand. If a sibling web artifact exists, read its index.css and convert the
- * HSL values to hex so both artifacts use the same palette.
- *
- * To add dark mode, add a `dark` key with the same token names.
- * The useColors() hook will automatically pick it up.
+ * Semantic design tokens for Service App (Theme B).
+ * Navy primary, slate neutrals, amber accent, soft slate background.
  */
 
 const colors = {
@@ -29,6 +20,7 @@ const colors = {
     // Primary action color (buttons, links, active states)
     primary: '#1E3A5F',
     primaryForeground: '#ffffff',
+    primarySoft: '#EAF1F8',
 
     // Secondary / less-emphasis interactive surfaces
     secondary: '#E8EEF5',
@@ -41,18 +33,27 @@ const colors = {
     // Accent highlights (badges, selected items, focus rings)
     accent: '#D97706',
     accentForeground: '#FFFFFF',
+    accentSoft: '#FBEEDC',
+
+    // Positive states (confirmed, paid, completed)
+    success: '#1F7A46',
+    successSoft: '#E6F3EB',
+
+    // Caution states (negotiating, pending)
+    warning: '#A16207',
+    warningSoft: '#FDF3E3',
 
     // Destructive actions (delete, error states)
     destructive: '#B91C1C',
     destructiveForeground: '#ffffff',
+    destructiveSoft: '#FBE9E9',
 
     // Borders and input outlines
     border: '#DDE5EF',
     input: '#CBD5E1',
   },
 
-  // Border radius (in px). Sync from the sibling web artifact's --radius
-  // CSS variable. This value applies to cards, buttons, inputs, and modals.
+  // Border radius (in px). Applies to cards, buttons, inputs, and modals.
   radius: 10,
 };
 

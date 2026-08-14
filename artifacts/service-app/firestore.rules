@@ -1,0 +1,145 @@
+rules_version = '2';
+
+// Firestore security rules for the Service App marketplace.
+// Publish these in Firebase Console → Firestore Database → Rules.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    // Keys that any signed-in user is allowed to write to another user's doc
+    // (rating aggregate mirror after a review). Everything else requires isSelf.
+    function isRatingOnlyWrite() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['ratingAvg', 'ratingCount', 'recentReviews']);
+    }
+
+    // Public profile fields — safe to expose to other signed-in users.
+    // Sensitive fields (email, savedJobIds, blockedUserIds, notifyQuotes,
+    // verified, password) are NOT in this set.
+    function publicFields() {
+      return ['name', 'role', 'workArea', 'categories', 'priceRange',
+              'companyInfo', 'bio', 'avatarUrl', 'ratingAvg', 'ratingCount',
+              'recentReviews', 'createdAtMs'];
+    }
+
+    // ---------- Users ----------
+    // NOTE: Firestore rules cannot filter individual fields on reads.
+    // All signed-in users can read full user documents (needed for job cards,
+    // chat participant names, and public profiles). A future Cloud Function
+    // can expose only public fields via an HTTP endpoint.
+    match /users/{userId} {
+      allow read: if signedIn();
+      // Own profile create/update.
+      allow create: if isSelf(userId);
+      allow update: if isSelf(userId)
+        // Any signed-in user may mirror rating aggregates after reviewing.
+        || (signedIn() && isRatingOnlyWrite());
+      allow delete: if false;
+    }
+
+    // ---------- Jobs ----------
+    match /jobs/{jobId} {
+      allow read: if signedIn();
+
+      // Employer creates their own job; must set correct employerId and open status.
+      allow create: if signedIn()
+        && request.resource.data.employerId == request.auth.uid
+        && request.resource.data.status == 'open';
+
+      // Participants (employer or assigned provider) may update.
+      // A provider may additionally self-assign an open, unclaimed job —
+      // using hasAny(['employeeId']) safely handles missing-field case.
+      allow update: if signedIn() && (
+        resource.data.employerId == request.auth.uid
+        || (resource.data.get('employeeId', null) == request.auth.uid)
+        || (
+          // Self-assign: job is open and has no provider yet.
+          resource.data.status == 'open'
+          && resource.data.get('employeeId', null) == null
+          && request.resource.data.get('employeeId', null) == request.auth.uid
+          // Only allow the assignment fields to change, not e.g. employerId or title.
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['employeeId', 'employeeName', 'status'])
+        )
+      );
+      allow delete: if signedIn()
+        && resource.data.employerId == request.auth.uid
+        && resource.data.status == 'open';
+
+      // Employer → provider review (one per reviewer, immutable after creation).
+      match /review/{reviewerId} {
+        allow read: if signedIn();
+        // Reviewer must be a participant and the job must be completed.
+        allow create: if isSelf(reviewerId)
+          && get(/databases/$(database)/documents/jobs/$(jobId)).data.status == 'completed'
+          && (get(/databases/$(database)/documents/jobs/$(jobId)).data.employerId == request.auth.uid
+              || get(/databases/$(database)/documents/jobs/$(jobId)).data.get('employeeId', null) == request.auth.uid);
+        allow update, delete: if false;
+      }
+
+      // Provider → employer review (one per reviewer, immutable after creation).
+      match /employerReview/{reviewerId} {
+        allow read: if signedIn();
+        allow create: if isSelf(reviewerId)
+          && get(/databases/$(database)/documents/jobs/$(jobId)).data.status == 'completed'
+          && (get(/databases/$(database)/documents/jobs/$(jobId)).data.employerId == request.auth.uid
+              || get(/databases/$(database)/documents/jobs/$(jobId)).data.get('employeeId', null) == request.auth.uid);
+        allow update, delete: if false;
+      }
+    }
+
+    // ---------- Chats ----------
+    match /chats/{chatId} {
+      allow read: if signedIn()
+        && request.auth.uid in resource.data.participants;
+      // Chat creation is done by the accepting provider; they must be in participants
+      // and the list must have exactly 2 entries (employer + provider).
+      allow create: if signedIn()
+        && request.auth.uid in request.resource.data.participants
+        && request.resource.data.participants.size() == 2;
+      // Participants may update chat metadata (lastMessage, lastReadAt, etc.)
+      // but cannot alter the participant list itself.
+      allow update: if signedIn()
+        && request.auth.uid in resource.data.participants
+        && request.resource.data.participants == resource.data.participants;
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if signedIn()
+          && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+        // Message sender must be the authenticated user.
+        allow create: if signedIn()
+          && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants
+          && request.resource.data.senderId == request.auth.uid;
+        allow update, delete: if false;
+      }
+    }
+
+    // ---------- Notifications ----------
+    // Owner reads/updates/deletes their own.
+    // Any signed-in user may create a notification, but the `userId` field must be
+    // set to a real user other than themselves (prevents self-spam rings).
+    match /notifications/{notificationId} {
+      allow read, update, delete: if signedIn()
+        && resource.data.userId == request.auth.uid;
+      allow create: if signedIn()
+        && request.resource.data.keys().hasAll(['userId', 'kind', 'title', 'body', 'read', 'createdAtMs'])
+        && request.resource.data.userId != request.auth.uid;
+    }
+
+    // ---------- Reports ----------
+    // Write-only drop box: users file reports; only backend/console reads them.
+    match /reports/{reportId} {
+      allow create: if signedIn()
+        && request.resource.data.reporterId == request.auth.uid;
+      allow read, update, delete: if false;
+    }
+  }
+}

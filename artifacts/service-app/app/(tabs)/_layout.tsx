@@ -4,9 +4,10 @@ import { useColors } from '@/hooks/useColors';
 import { Feather } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { isLiquidGlassAvailable } from 'expo-glass-effect';
-import { Tabs } from 'expo-router';
+import { Redirect, Tabs } from 'expo-router';
 import { Icon, Label, NativeTabs } from 'expo-router/unstable-native-tabs';
 import { SymbolView } from 'expo-symbols';
+import { useServiceApp } from '@/context/ServiceAppContext';
 
 // IMPORTANT: iOS 26 uses NativeTabs for native tabs with liquid glass support.
 // NativeTabs intentionally does NOT use custom design tokens — liquid glass
@@ -23,6 +24,10 @@ function NativeTabLayout() {
         <Icon sf={{ default: 'briefcase', selected: 'briefcase.fill' }} />
         <Label>Jobs</Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="messages">
+        <Icon sf={{ default: 'message', selected: 'message.fill' }} />
+        <Label>Messages</Label>
+      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="profile">
         <Icon sf={{ default: 'person', selected: 'person.fill' }} />
         <Label>Profile</Label>
@@ -34,6 +39,7 @@ function NativeTabLayout() {
 function ClassicTabLayout() {
   const colors = useColors();
   const colorScheme = useColorScheme();
+  const { unreadMessageCount } = useServiceApp();
   const isDark = colorScheme === 'dark';
   const isIOS = Platform.OS === 'ios';
   const isWeb = Platform.OS === 'web';
@@ -43,10 +49,11 @@ function ClassicTabLayout() {
       screenOptions={{
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.mutedForeground,
-        headerShown: true,
+        headerShown: false,
+        tabBarLabelStyle: { fontFamily: 'Inter_600SemiBold', fontSize: 11 },
         tabBarStyle: {
           position: 'absolute',
-          backgroundColor: isIOS ? 'transparent' : colors.background,
+          backgroundColor: isIOS ? 'transparent' : colors.card,
           borderTopWidth: isWeb ? 1 : 0,
           borderTopColor: colors.border,
           elevation: 0,
@@ -54,19 +61,10 @@ function ClassicTabLayout() {
         },
         tabBarBackground: () =>
           isIOS ? (
-            <BlurView
-              intensity={100}
-              tint={isDark ? 'dark' : 'light'}
-              style={StyleSheet.absoluteFill}
-            />
-          ) : isWeb ? (
-            <View
-              style={[
-                StyleSheet.absoluteFill,
-                { backgroundColor: colors.background },
-              ]}
-            />
-          ) : null,
+            <BlurView intensity={100} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+          ) : (
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.card }]} />
+          ),
       }}
     >
       <Tabs.Screen
@@ -89,6 +87,15 @@ function ClassicTabLayout() {
         }}
       />
       <Tabs.Screen
+        name="messages"
+        options={{
+          title: 'Messages',
+          tabBarIcon: ({ color }) => <Feather name="message-circle" size={22} color={color} />,
+          tabBarBadge: unreadMessageCount > 0 ? (unreadMessageCount > 9 ? '9+' : unreadMessageCount) : undefined,
+          tabBarBadgeStyle: { backgroundColor: colors.accent, color: '#fff', fontFamily: 'Inter_700Bold', fontSize: 10 },
+        }}
+      />
+      <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',
@@ -100,6 +107,10 @@ function ClassicTabLayout() {
 }
 
 export default function TabLayout() {
+  const { ready, user } = useServiceApp();
+  if (ready && !user) {
+    return <Redirect href="/" />;
+  }
   if (isLiquidGlassAvailable()) {
     return <NativeTabLayout />;
   }

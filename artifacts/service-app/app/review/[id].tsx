@@ -1,39 +1,160 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { Card, EmptyState, Field, HeaderBar, PrimaryButton, Screen, Stars } from '@/components/AppPrimitives';
+import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
+import { REVIEW_TAGS, useServiceApp } from '@/context/ServiceAppContext';
 import { useColors } from '@/hooks/useColors';
-import { Field, Pill, PrimaryButton, Screen } from '@/components/AppPrimitives';
-import { useServiceApp } from '@/context/ServiceAppContext';
+
+const RATING_WORDS = ['', 'Poor', 'Fair', 'Good', 'Very good', 'Excellent'];
+
+function SubRating({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
+  const colors = useColors();
+  return (
+    <View style={styles.subRow}>
+      <Text style={[styles.subLabel, { color: colors.foreground }]}>{label}</Text>
+      <Stars value={value} size={20} onChange={onChange} />
+    </View>
+  );
+}
 
 export default function ReviewScreen() {
   const colors = useColors();
-  const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { currentUser, jobs, leaveReview } = useServiceApp();
-  const job = jobs.find((item) => item.id === id);
-  const [rating, setRating] = useState(5);
+  const { user, jobs, submitReview } = useServiceApp();
+
+  const job = jobs.find((j) => j.id === id);
+  const [rating, setRating] = useState(0);
+  const [communication, setCommunication] = useState(0);
+  const [quality, setQuality] = useState(0);
+  const [punctuality, setPunctuality] = useState(0);
+  const [tags, setTags] = useState<string[]>([]);
   const [comment, setComment] = useState('');
-  const [tag, setTag] = useState('Great communication');
-  if (!job) return null;
-  const other = currentUser.role === 'employer' ? job.employeeName ?? 'your service provider' : job.employerName;
-  const submit = () => { leaveReview(job.id, rating, comment); router.back(); };
-  return <Screen><View style={[styles.top, { paddingTop: insets.top + 8, borderBottomColor: colors.border }]}><Pressable onPress={() => router.back()}><Ionicons name="close" size={24} color={colors.primary} /></Pressable><Text style={[styles.topTitle, { color: colors.foreground }]}>Leave a review</Text><View style={{ width: 24 }} /></View><View style={[styles.content, { paddingBottom: insets.bottom + 24 }]}><View style={[styles.hero, { backgroundColor: colors.secondary }]}><View style={[styles.avatar, { backgroundColor: colors.primary }]}><Ionicons name={currentUser.role === 'employer' ? 'hammer-outline' : 'person-outline'} size={25} color="#FFFFFF" /></View><Text style={[styles.kicker, { color: colors.mutedForeground }]}>HOW DID IT GO?</Text><Text style={[styles.title, { color: colors.foreground }]}>Rate {other}</Text><Text style={[styles.body, { color: colors.mutedForeground }]}>Your feedback helps make Service App safer and better for everyone.</Text></View><View style={styles.stars}>{[1, 2, 3, 4, 5].map((value) => <Pressable key={value} onPress={() => setRating(value)} hitSlop={4}><Ionicons name={value <= rating ? 'star' : 'star-outline'} size={34} color={value <= rating ? colors.accent : colors.border} /></Pressable>)}</View><Text style={[styles.ratingText, { color: colors.foreground }]}>{rating === 5 ? 'Excellent' : rating === 4 ? 'Really good' : rating === 3 ? 'It was okay' : 'Could be better'}</Text><Text style={[styles.label, { color: colors.mutedForeground }]}>What stood out?</Text><View style={styles.tags}>{['Great communication', 'Quality work', 'On time', 'Fair price'].map((item) => <Pill label={item} active={tag === item} onPress={() => setTag(item)} key={item} />)}</View><Field label="Add a note (optional)" placeholder="Share a little more..." multiline numberOfLines={5} value={comment} onChangeText={setComment} style={styles.textarea} /><PrimaryButton label="Publish review" onPress={submit} icon="checkmark" /></View></Screen>;
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  if (!user) return null;
+  if (!job || job.status !== 'completed' || (job.employerId !== user.id && job.employeeId !== user.id)) {
+    return (
+      <Screen>
+        <HeaderBar title="Leave a review" onBack={() => router.back()} />
+        <EmptyState icon="star-outline" title="Nothing to review" body="Reviews open once a job is completed." />
+      </Screen>
+    );
+  }
+  if (job.reviewedBy.includes(user.id)) {
+    return (
+      <Screen>
+        <HeaderBar title="Leave a review" onBack={() => router.back()} />
+        <EmptyState icon="checkmark-circle-outline" title="Already reviewed" body="You've already reviewed this job. Thanks!" />
+      </Screen>
+    );
+  }
+
+  const isEmployerOnJob = job.employerId === user.id;
+  const targetName = isEmployerOnJob ? job.employeeName ?? 'the provider' : job.employerName;
+
+  const toggleTag = (t: string) =>
+    setTags((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : prev.length < 5 ? [...prev, t] : prev));
+
+  const submit = async () => {
+    if (rating < 1) {
+      setError('Tap the stars to give an overall rating.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    const err = await submitReview(job.id, {
+      rating,
+      communication: communication || undefined,
+      quality: quality || undefined,
+      punctuality: punctuality || undefined,
+      tags,
+      comment: comment.trim(),
+    });
+    setBusy(false);
+    if (err) {
+      setError(err);
+      return;
+    }
+    router.back();
+  };
+
+  return (
+    <Screen>
+      <HeaderBar title={`Rate ${targetName}`} subtitle={job.title} onBack={() => router.back()} />
+      <KeyboardAwareScrollViewCompat contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <Card style={{ alignItems: 'center', gap: 10 }}>
+          <Text style={[styles.bigLabel, { color: colors.foreground }]}>How was your experience?</Text>
+          <Stars value={rating} size={36} onChange={setRating} />
+          <Text style={[styles.ratingWord, { color: rating ? colors.accent : colors.mutedForeground }]}>
+            {rating ? RATING_WORDS[rating] : 'Tap a star'}
+          </Text>
+        </Card>
+
+        <Card style={{ gap: 4, marginTop: 12 }}>
+          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Details (optional)</Text>
+          <SubRating label="Communication" value={communication} onChange={setCommunication} />
+          <SubRating label="Quality of work" value={quality} onChange={setQuality} />
+          <SubRating label="Punctuality" value={punctuality} onChange={setPunctuality} />
+        </Card>
+
+        <Card style={{ gap: 10, marginTop: 12 }}>
+          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>What stood out?</Text>
+          <View style={styles.tagWrap}>
+            {REVIEW_TAGS.map((t) => {
+              const active = tags.includes(t);
+              return (
+                <Pressable
+                  key={t}
+                  testID={`tag-${t}`}
+                  onPress={() => toggleTag(t)}
+                  style={[
+                    styles.tag,
+                    {
+                      backgroundColor: active ? colors.primary : colors.background,
+                      borderColor: active ? colors.primary : colors.border,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.tagText, { color: active ? '#fff' : colors.mutedForeground }]}>{t}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </Card>
+
+        <View style={{ marginTop: 12 }}>
+          <Field
+            label="Comment (optional)"
+            icon="chatbox-ellipses-outline"
+            placeholder={`Share a few words about working with ${targetName}…`}
+            value={comment}
+            onChangeText={setComment}
+            multiline
+            testID="review-comment"
+          />
+        </View>
+
+        {error ? <Text style={[styles.error, { color: colors.destructive }]}>{error}</Text> : null}
+        <View style={{ marginTop: 14 }}>
+          <PrimaryButton label="Submit review" icon="star" onPress={submit} loading={busy} testID="submit-review" />
+        </View>
+      </KeyboardAwareScrollViewCompat>
+    </Screen>
+  );
 }
 
 const styles = StyleSheet.create({
-  top: { paddingHorizontal: 20, paddingBottom: 13, borderBottomWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  topTitle: { fontFamily: 'Inter_700Bold', fontSize: 16 },
-  content: { flex: 1, padding: 20, gap: 17 },
-  hero: { borderRadius: 15, padding: 20, alignItems: 'center', gap: 8 },
-  avatar: { width: 56, height: 56, borderRadius: 18, alignItems: 'center', justifyContent: 'center', marginBottom: 5 },
-  kicker: { fontFamily: 'Inter_700Bold', fontSize: 10, letterSpacing: 1.1 },
-  title: { fontFamily: 'Inter_700Bold', fontSize: 22, textAlign: 'center' },
-  body: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18, textAlign: 'center' },
-  stars: { flexDirection: 'row', justifyContent: 'center', gap: 7, marginTop: 4 },
-  ratingText: { fontFamily: 'Inter_700Bold', fontSize: 14, textAlign: 'center', marginTop: -8 },
-  label: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
-  tags: { flexDirection: 'row', flexWrap: 'wrap', rowGap: 8, marginTop: -8 },
-  textarea: { minHeight: 108, alignItems: 'flex-start' },
+  scroll: { padding: 18, paddingBottom: 60, maxWidth: 640, width: '100%', alignSelf: 'center' },
+  bigLabel: { fontFamily: 'Inter_700Bold', fontSize: 16 },
+  ratingWord: { fontFamily: 'Inter_600SemiBold', fontSize: 13 },
+  sectionLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5 },
+  subRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8 },
+  subLabel: { fontFamily: 'Inter_500Medium', fontSize: 13.5 },
+  tagWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  tag: { borderWidth: 1, borderRadius: 9, paddingHorizontal: 11, paddingVertical: 7 },
+  tagText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
+  error: { fontFamily: 'Inter_500Medium', fontSize: 13, marginTop: 12 },
 });

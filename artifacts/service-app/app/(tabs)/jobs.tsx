@@ -1,55 +1,148 @@
 import React, { useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { router } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
+import { EmptyState, Field, GhostButton, Pill, Screen } from '@/components/AppPrimitives';
+import { JobCard } from '@/components/JobCard';
+import { CATEGORIES, CATEGORY_ICONS, Job, useServiceApp } from '@/context/ServiceAppContext';
 import { useColors } from '@/hooks/useColors';
-import { Pill, SectionTitle, StatusBadge } from '@/components/AppPrimitives';
-import { useServiceApp, Job } from '@/context/ServiceAppContext';
 
-const categories = ['All', 'Cleaning', 'Plumbing', 'Electrical', 'Painting', 'Landscaping', 'Moving', 'Handyman'];
+type Segment = { key: string; label: string };
 
-function JobRow({ job, providerMode, onSave }: { job: Job; providerMode: boolean; onSave: () => void }) {
+function SegmentBar({ segments, active, onChange }: { segments: Segment[]; active: string; onChange: (k: string) => void }) {
   const colors = useColors();
-  return <Pressable onPress={() => router.push(`/job/${job.id}`)} style={({ pressed }) => [styles.row, { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.75 : 1 }]}><View style={[styles.rowIcon, { backgroundColor: colors.secondary }]}><Ionicons name={job.category === 'Cleaning' ? 'sparkles-outline' : job.category === 'Painting' ? 'color-palette-outline' : 'construct-outline'} size={20} color={colors.primary} /></View><View style={styles.rowContent}><View style={styles.rowTitleLine}><Text style={[styles.rowTitle, { color: colors.foreground }]} numberOfLines={1}>{job.title}</Text>{providerMode ? <Pressable onPress={onSave} hitSlop={10}><Ionicons name={job.saved ? 'bookmark' : 'bookmark-outline'} size={18} color={job.saved ? colors.accent : colors.mutedForeground} /></Pressable> : null}</View><Text style={[styles.rowMeta, { color: colors.mutedForeground }]}>{job.category} · {job.scheduledAt}</Text><View style={styles.rowBottom}><Text style={[styles.rowPrice, { color: colors.primary }]}>${job.agreedPrice ?? job.proposedPrice ?? job.priceOffer}</Text><StatusBadge status={job.status} /><View style={styles.flex} /><Ionicons name="chevron-forward" size={17} color={colors.mutedForeground} /></View></View></Pressable>;
+  return (
+    <View style={[styles.segment, { backgroundColor: colors.secondary }]}>
+      {segments.map((s) => (
+        <Pressable
+          key={s.key}
+          testID={`segment-${s.key}`}
+          onPress={() => onChange(s.key)}
+          style={[styles.segmentItem, active === s.key ? { backgroundColor: colors.card } : null]}
+        >
+          <Text style={[styles.segmentText, { color: active === s.key ? colors.primary : colors.mutedForeground }]}>
+            {s.label}
+          </Text>
+        </Pressable>
+      ))}
+    </View>
+  );
 }
 
 export default function JobsScreen() {
   const colors = useColors();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { currentUser, jobs, toggleSaved } = useServiceApp();
+  const { user, jobs } = useServiceApp();
+  const isEmployer = user?.role === 'employer';
+
+  const [segment, setSegment] = useState(isEmployer ? 'open' : 'browse');
   const [search, setSearch] = useState('');
-  const [category, setCategory] = useState('All');
-  const [savedOnly, setSavedOnly] = useState(false);
-  const isProvider = currentUser.role === 'provider';
-  const visible = useMemo(() => jobs.filter((job) => {
-    const roleMatch = isProvider ? job.status === 'open' || job.employeeId === currentUser.id : job.employerId === currentUser.id;
-    const textMatch = `${job.title} ${job.category}`.toLowerCase().includes(search.toLowerCase());
-    const catMatch = category === 'All' || job.category === category;
-    return roleMatch && textMatch && catMatch && (!savedOnly || job.saved);
-  }), [jobs, isProvider, currentUser.id, search, category, savedOnly]);
-  return <View style={[styles.root, { backgroundColor: colors.background }]}><FlatList data={visible} keyExtractor={(item) => item.id} renderItem={({ item }) => <JobRow job={item} providerMode={isProvider} onSave={() => toggleSaved(item.id)} />} contentContainerStyle={[styles.content, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 100 }]} ListHeaderComponent={<><View style={styles.header}><View><Text style={[styles.eyebrow, { color: colors.mutedForeground }]}>{isProvider ? 'YOUR MARKETPLACE' : 'YOUR WORKSPACE'}</Text><Text style={[styles.title, { color: colors.foreground }]}>{isProvider ? 'Find your next job' : 'Your job requests'}</Text></View>{!isProvider ? <Pressable onPress={() => router.push('/post-job')} style={[styles.addButton, { backgroundColor: colors.accent }]}><Ionicons name="add" size={22} color={colors.primaryForeground} /></Pressable> : null}</View><View style={[styles.searchBox, { borderColor: colors.border, backgroundColor: colors.card }]}><Ionicons name="search-outline" size={18} color={colors.mutedForeground} /><TextInput value={search} onChangeText={setSearch} placeholder="Search by service or area" placeholderTextColor={colors.mutedForeground} style={[styles.searchInput, { color: colors.foreground }]} /><Pressable onPress={() => setSavedOnly(!savedOnly)}><Ionicons name={savedOnly ? 'bookmark' : 'bookmark-outline'} size={19} color={savedOnly ? colors.accent : colors.mutedForeground} /></Pressable></View><View><SectionTitle title={`${visible.length} ${visible.length === 1 ? 'result' : 'results'}`} /><FlatList horizontal data={categories} keyExtractor={(item) => item} showsHorizontalScrollIndicator={false} renderItem={({ item }) => <Pill label={item} active={category === item} onPress={() => setCategory(item)} />} /></View></>} ListEmptyComponent={<View style={[styles.empty, { borderColor: colors.border, backgroundColor: colors.card }]}><Ionicons name="search-outline" size={26} color={colors.mutedForeground} /><Text style={[styles.emptyTitle, { color: colors.foreground }]}>No jobs match that yet</Text><Text style={[styles.emptyBody, { color: colors.mutedForeground }]}>Try another category or clear your search.</Text></View>} showsVerticalScrollIndicator={false} /></View>;
+  const [category, setCategory] = useState<string | null>(null);
+
+  const data: Job[] = useMemo(() => {
+    if (!user) return [];
+    if (isEmployer) {
+      const mine = jobs.filter((j) => j.employerId === user.id);
+      if (segment === 'open') return mine.filter((j) => j.status === 'open');
+      if (segment === 'active') return mine.filter((j) => j.status === 'negotiating' || j.status === 'accepted');
+      return mine.filter((j) => j.status === 'completed');
+    }
+    if (segment === 'saved') return jobs.filter((j) => user.savedJobIds.includes(j.id));
+    if (segment === 'mine') return jobs.filter((j) => j.employeeId === user.id);
+    // browse
+    const q = search.trim().toLowerCase();
+    return jobs.filter((j) => {
+      if (j.status !== 'open' || j.employerId === user.id) return false;
+      if (user.blockedUserIds.includes(j.employerId)) return false;
+      if (category && j.category !== category) return false;
+      if (q && !`${j.title} ${j.details} ${j.category}`.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [user, jobs, isEmployer, segment, search, category]);
+
+  if (!user) return null;
+
+  const segments: Segment[] = isEmployer
+    ? [
+        { key: 'open', label: 'Open' },
+        { key: 'active', label: 'In progress' },
+        { key: 'done', label: 'Completed' },
+      ]
+    : [
+        { key: 'browse', label: 'Browse' },
+        { key: 'saved', label: 'Saved' },
+        { key: 'mine', label: 'My work' },
+      ];
+
+  const emptyCopy: Record<string, { title: string; body: string }> = {
+    open: { title: 'No open jobs', body: 'Jobs you post appear here until a provider accepts them.' },
+    active: { title: 'Nothing in progress', body: 'Once a provider accepts a job, you can negotiate and confirm it here.' },
+    done: { title: 'No completed jobs yet', body: 'Completed jobs and their reviews will appear here.' },
+    browse: { title: 'No jobs match', body: 'Try a different search or category filter.' },
+    saved: { title: 'No saved jobs', body: 'Tap the bookmark on any job to keep it handy here.' },
+    mine: { title: 'No accepted jobs yet', body: 'Jobs you accept will show up here so you can track them.' },
+  };
+
+  return (
+    <Screen>
+      <FlatList
+        data={data}
+        keyExtractor={(j) => j.id}
+        renderItem={({ item }) => <JobCard job={item} />}
+        contentContainerStyle={{ paddingTop: insets.top + 14, paddingBottom: insets.bottom + 120, paddingHorizontal: 18 }}
+        showsVerticalScrollIndicator={false}
+        ListHeaderComponent={
+          <View style={{ gap: 14, marginBottom: 14 }}>
+            <View style={styles.headerRow}>
+              <Text style={[styles.title, { color: colors.foreground }]}>Jobs</Text>
+              {isEmployer ? (
+                <GhostButton label="Post job" icon="add" testID="jobs-post" onPress={() => router.push('/post-job')} />
+              ) : null}
+            </View>
+            <SegmentBar segments={segments} active={segment} onChange={setSegment} />
+            {!isEmployer && segment === 'browse' ? (
+              <>
+                <Field
+                  icon="search-outline"
+                  placeholder="Search jobs, categories…"
+                  value={search}
+                  onChangeText={setSearch}
+                  testID="search-jobs"
+                  autoCapitalize="none"
+                />
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingRight: 12 }}>
+                  <Pill label="All" active={category === null} onPress={() => setCategory(null)} />
+                  {CATEGORIES.map((c) => (
+                    <Pill
+                      key={c}
+                      label={c}
+                      icon={CATEGORY_ICONS[c]}
+                      active={category === c}
+                      onPress={() => setCategory(category === c ? null : c)}
+                    />
+                  ))}
+                </ScrollView>
+              </>
+            ) : null}
+          </View>
+        }
+        ListEmptyComponent={
+          <EmptyState
+            icon={isEmployer ? 'clipboard-outline' : 'search-outline'}
+            title={emptyCopy[segment]?.title ?? 'Nothing here'}
+            body={emptyCopy[segment]?.body}
+          />
+        }
+      />
+    </Screen>
+  );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
-  content: { paddingHorizontal: 20, gap: 13 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 },
-  eyebrow: { fontFamily: 'Inter_700Bold', fontSize: 10, letterSpacing: 1.1 },
-  title: { fontFamily: 'Inter_700Bold', fontSize: 27, marginTop: 4, letterSpacing: -0.5 },
-  addButton: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-  searchBox: { height: 49, borderWidth: 1, borderRadius: 11, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 9 },
-  searchInput: { flex: 1, fontFamily: 'Inter_400Regular', fontSize: 13 },
-  row: { borderWidth: 1, borderRadius: 12, padding: 14, flexDirection: 'row', gap: 11 },
-  rowIcon: { width: 42, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  rowContent: { flex: 1, gap: 6 },
-  rowTitleLine: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  rowTitle: { flex: 1, fontFamily: 'Inter_700Bold', fontSize: 14 },
-  rowMeta: { fontFamily: 'Inter_400Regular', fontSize: 11 },
-  rowBottom: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 },
-  rowPrice: { fontFamily: 'Inter_700Bold', fontSize: 16 },
-  flex: { flex: 1 },
-  empty: { borderWidth: 1, borderRadius: 12, padding: 24, alignItems: 'center', gap: 6, marginTop: 10 },
-  emptyTitle: { fontFamily: 'Inter_700Bold', fontSize: 15 },
-  emptyBody: { fontFamily: 'Inter_400Regular', fontSize: 12 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  title: { fontFamily: 'Inter_700Bold', fontSize: 24 },
+  segment: { flexDirection: 'row', borderRadius: 11, padding: 4 },
+  segmentItem: { flex: 1, borderRadius: 8, paddingVertical: 9, alignItems: 'center' },
+  segmentText: { fontFamily: 'Inter_600SemiBold', fontSize: 12.5 },
 });
