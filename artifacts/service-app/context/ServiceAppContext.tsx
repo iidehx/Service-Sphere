@@ -122,7 +122,7 @@ type ServiceAppContextValue = {
   saveAvatar: (localUri: string) => Promise<string | null>;
 };
 
-const ServiceAppContext = createContext<ServiceAppContextValue | null>(null);
+export const ServiceAppContext = createContext<ServiceAppContextValue | null>(null);
 
 // ---------------------------------------------------------------------------
 // Firestore document mappers (defensive defaults so partial docs never crash)
@@ -469,6 +469,44 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  /**
+   * Sends a real push notification for a job lifecycle event via the API server.
+   * The server reads the job from Firestore using the caller's own Firebase ID
+   * token — Firestore security rules enforce participation — then derives the
+   * recipient and notification content server-side so the client cannot forge
+   * either the target or the message text.
+   */
+  const sendEventPush = async (
+    event:
+      | 'job_accepted'
+      | 'quote_proposed'
+      | 'quote_accepted'
+      | 'quote_declined'
+      | 'payment_updated'
+      | 'payment_refunded'
+      | 'job_completed'
+      | 'review_submitted',
+    jobId: string,
+  ) => {
+    try {
+      const { auth } = getFirebase();
+      const idToken = await auth.currentUser?.getIdToken();
+      const domain = process.env.EXPO_PUBLIC_DOMAIN;
+      if (idToken && domain) {
+        await fetch(`https://${domain}/api/notifications/send`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify({ event, jobId }),
+        });
+      }
+    } catch {
+      // Push is best-effort; never block the main action.
+    }
+  };
+
   // ---- Auth operations ------------------------------------------------------
   const registerWithEmail = async (name: string, email: string, password: string, role: Role) => {
     const cleanName = name.trim();
@@ -706,6 +744,7 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
         status: 'negotiating',
       });
       await fbNotify(job.employerId, 'job', 'Provider accepted your job', `${user.name} accepted "${job.title}". Open the chat to agree on a quote.`, jobId, chatId);
+      await sendEventPush('job_accepted', jobId);
       return { chatId };
     } catch (e) {
       return { error: friendlyError(e) };
@@ -834,6 +873,7 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
       });
       if (otherId) {
         await fbNotify(otherId, 'quote', 'New quote received', `${user.name} proposed $${total} for "${job.title}".`, jobId, chatId);
+        await sendEventPush('quote_proposed', jobId);
       }
       return null;
     } catch (e) {
@@ -925,6 +965,7 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
           jobId,
           chatId,
         );
+        await sendEventPush('quote_accepted', jobId);
       }
       return null;
     } catch (e) {
@@ -985,7 +1026,10 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
         employeeQuoteAccepted: false,
       });
       await sendChatUpdate(chatId, { senderId: user.id, senderName: user.name, text: sysText, kind: 'system', createdAtMs: now });
-      if (otherId) await fbNotify(otherId, 'quote', 'Quote declined', `${user.name} declined the quote for "${job.title}".`, jobId, chatId);
+      if (otherId) {
+        await fbNotify(otherId, 'quote', 'Quote declined', `${user.name} declined the quote for "${job.title}".`, jobId, chatId);
+        await sendEventPush('quote_declined', jobId);
+      }
       return null;
     } catch (e) {
       return friendlyError(e);
@@ -1028,7 +1072,10 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
       if (chats.some((c) => c.id === chatId)) {
         await sendChatUpdate(chatId, { senderId: user.id, senderName: user.name, text: sysText, kind: 'system', createdAtMs: now });
       }
-      if (job.employeeId) await fbNotify(job.employeeId, 'payment', `Payment ${label}`, `${user.name} marked "${job.title}" as ${label}.`, jobId, chatId);
+      if (job.employeeId) {
+        await fbNotify(job.employeeId, 'payment', `Payment ${label}`, `${user.name} marked "${job.title}" as ${label}.`, jobId, chatId);
+        await sendEventPush(status === 'paid' ? 'payment_updated' : 'payment_refunded', jobId);
+      }
       return null;
     } catch (e) {
       return friendlyError(e);
@@ -1071,7 +1118,10 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
       if (chats.some((c) => c.id === chatId)) {
         await sendChatUpdate(chatId, { senderId: user.id, senderName: user.name, text: sysText, kind: 'system', createdAtMs: now });
       }
-      if (job.employeeId) await fbNotify(job.employeeId, 'job', 'Job completed', `${user.name} marked "${job.title}" as completed. Leave a review!`, jobId, chatId);
+      if (job.employeeId) {
+        await fbNotify(job.employeeId, 'job', 'Job completed', `${user.name} marked "${job.title}" as completed. Leave a review!`, jobId, chatId);
+        await sendEventPush('job_completed', jobId);
+      }
       return null;
     } catch (e) {
       return friendlyError(e);
@@ -1158,6 +1208,7 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
         // Aggregate update is best-effort; the review itself is stored.
       }
       await fbNotify(targetUserId, 'review', 'New review received', `${user.name} rated you ${review.rating}★ on "${job.title}".`, jobId);
+      await sendEventPush('review_submitted', jobId);
       return null;
     } catch (e) {
       return friendlyError(e);
