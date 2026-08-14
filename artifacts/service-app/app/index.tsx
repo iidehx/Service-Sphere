@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Google from 'expo-auth-session/providers/google';
+import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import { Redirect } from 'expo-router';
 import { AppLogo, Card, Field, GhostButton, PrimaryButton, Screen } from '@/components/AppPrimitives';
@@ -84,8 +85,13 @@ export default function AuthScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const intentRef = useRef<GoogleIntent>('login');
 
+  // Explicitly set the redirect URI so it matches exactly what's registered
+  // in Google Cloud Console → OAuth client → Authorized redirect URIs.
+  const redirectUri = AuthSession.makeRedirectUri({ useProxy: false });
+
   const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
     clientId: googleWebClientId || 'unconfigured.apps.googleusercontent.com',
+    redirectUri,
   });
 
   useEffect(() => {
