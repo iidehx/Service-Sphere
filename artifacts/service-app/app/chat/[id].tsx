@@ -150,11 +150,11 @@ export default function ChatScreen() {
               {otherName}
             </Text>
             <Text numberOfLines={1} style={[styles.headerJob, { color: colors.mutedForeground }]}>
-              {chat.jobTitle}
+              {chat.jobId ? chat.jobTitle : 'Direct message'}
             </Text>
           </View>
         </Pressable>
-        {job ? (
+        {chat.jobId && job ? (
           <Pressable
             hitSlop={10}
             testID="chat-job"
