@@ -89,7 +89,7 @@ export default function AuthScreen() {
   // On web we use Firebase signInWithPopup instead (no redirect URI config needed).
   const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
     clientId: googleWebClientId || 'unconfigured.apps.googleusercontent.com',
-    androidClientId: '1054709707950-dihmdngomvrjio20dma50q2b1kc23p8o.apps.googleusercontent.com',
+    useProxy: true,
   });
 
   useEffect(() => {
