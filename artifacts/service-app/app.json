@@ -21,7 +21,18 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/service-app-mark.png",
         "backgroundColor": "#1E3A5F"
-      }
+      },
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": [
+            {
+              "scheme": "com.googleusercontent.apps.1054709707950-dihmdngomvrjio20dma50q2b1kc23p8o"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     "web": {
       "favicon": "./assets/images/service-app-mark.png"
