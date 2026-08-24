@@ -1,0 +1,35 @@
+rules_version = '2';
+
+// Firebase Cloud Storage security rules for profile avatars.
+// Publish these in Firebase Console → Storage → Rules.
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function ownsAvatar(fileName) {
+      return signedIn()
+        && fileName.matches(
+          '^' + request.auth.uid + '-[0-9]{10,20}[.]jpg$'
+        );
+    }
+
+    match /avatars/{fileName} {
+      // Avatar URLs are shown to signed-in marketplace users.
+      allow read: if signedIn();
+
+      // The app writes avatars/{uid}-{timestamp}.jpg.
+      allow create, update: if ownsAvatar(fileName)
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp)');
+
+      allow delete: if ownsAvatar(fileName);
+    }
+
+    // Deny every other Storage path by default.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
