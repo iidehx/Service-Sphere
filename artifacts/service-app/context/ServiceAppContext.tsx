@@ -262,6 +262,25 @@ function newUserDoc(name: string, email: string, role: Role) {
   };
 }
 
+function publicProfileDoc(user: Omit<SessionUser, 'id'> | SessionUser) {
+  return {
+    name: user.name,
+    role: user.role,
+    workArea: user.workArea,
+    categories: user.categories,
+    priceRange: user.priceRange ?? '',
+    companyInfo: user.companyInfo ?? '',
+    bio: user.bio ?? '',
+    avatarUrl: user.avatarUrl ?? '',
+    ratingAvg: user.ratingAvg,
+    ratingCount: user.ratingCount,
+    recentReviews: user.recentReviews,
+    verified: Boolean(user.verified),
+    availableForWork: user.availableForWork !== false,
+    createdAtMs: user.createdAtMs,
+  };
+}
+
 const rid = (prefix: string) => `${prefix}-${Date.now()}-${Math.floor(Math.random() * 10_000)}`;
 
 // ---------------------------------------------------------------------------
@@ -287,6 +306,22 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
 
   const googleIntent = useRef<GoogleIntent | null>(null);
   const docWriteInFlight = useRef(false);
+
+  const writeNewUserDocs = async (
+    db: ReturnType<typeof getFirebase>['db'],
+    userId: string,
+    profile: ReturnType<typeof newUserDoc>,
+  ) => {
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'users', userId), profile);
+    batch.set(doc(db, 'publicProfiles', userId), publicProfileDoc(profile));
+    await batch.commit();
+  };
+
+  const syncPublicProfile = async (userId: string, profile: SessionUser) => {
+    const { db } = getFirebase();
+    await setDoc(doc(db, 'publicProfiles', userId), publicProfileDoc(profile), { merge: true });
+  };
 
   // ---- Demo boot & persistence -------------------------------------------
   useEffect(() => {
@@ -344,7 +379,11 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
       doc(db, 'users', authUid),
       async (snap) => {
         if (snap.exists()) {
-          setFbUser(mapUser(snap.id, snap.data()));
+          const profile = mapUser(snap.id, snap.data());
+          setFbUser(profile);
+          // Legacy accounts receive a safe public profile on their next login.
+          // It contains no email, saved items, blocks, or notification settings.
+          syncPublicProfile(authUid, profile).catch(() => undefined);
           setNeedsRole(false);
           googleIntent.current = null;
           setReady(true);
@@ -358,7 +397,7 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
             docWriteInFlight.current = true;
             try {
               const u = auth.currentUser;
-              await setDoc(doc(db, 'users', authUid), newUserDoc(u?.displayName ?? 'New user', u?.email ?? '', 'employer'));
+              await writeNewUserDocs(db, authUid, newUserDoc(u?.displayName ?? 'New user', u?.email ?? '', 'employer'));
             } catch {
               setReady(true);
             } finally {
@@ -550,7 +589,7 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
       } catch {
         // Display name is cosmetic; continue.
       }
-      await setDoc(doc(db, 'users', cred.user.uid), newUserDoc(cleanName, cleanEmail, role));
+      await writeNewUserDocs(db, cred.user.uid, newUserDoc(cleanName, cleanEmail, role));
       return null;
     } catch (e) {
       return friendlyError(e);
@@ -621,7 +660,7 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
     if (!u) return 'Your session expired. Please sign in again.';
     docWriteInFlight.current = true;
     try {
-      await setDoc(doc(db, 'users', u.uid), newUserDoc(u.displayName ?? 'New user', u.email ?? '', role));
+      await writeNewUserDocs(db, u.uid, newUserDoc(u.displayName ?? 'New user', u.email ?? '', role));
       googleIntent.current = null;
       setNeedsRole(false);
       return null;
@@ -886,8 +925,8 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
                   proposedPrice: total,
                   quoteBreakdown: breakdown,
                   quoteBy: user.id,
-                  employerQuoteAccepted: isEmployer,
-                  employeeQuoteAccepted: !isEmployer,
+                  employerQuoteAccepted: false,
+                  employeeQuoteAccepted: false,
                   agreedPrice: undefined,
                   platformFee: undefined,
                 }
@@ -910,8 +949,8 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
         proposedPrice: total,
         quoteBreakdown: breakdown,
         quoteBy: user.id,
-        employerQuoteAccepted: isEmployer,
-        employeeQuoteAccepted: !isEmployer,
+        employerQuoteAccepted: false,
+        employeeQuoteAccepted: false,
         agreedPrice: deleteField(),
         platformFee: deleteField(),
       });
@@ -1241,23 +1280,10 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
       // Per spec: employer's review of the provider → jobs/{id}/review/{reviewerId};
       // provider's review of the employer → jobs/{id}/employerReview/{reviewerId}.
       const sub = isEmployer ? 'review' : 'employerReview';
-      await setDoc(doc(db, 'jobs', jobId, sub, user.id), review);
-      await updateDoc(doc(db, 'jobs', jobId), { reviewedBy: arrayUnion(user.id) });
-      try {
-        const targetSnap = await getDoc(doc(db, 'users', targetUserId));
-        if (targetSnap.exists()) {
-          const target = mapUser(targetSnap.id, targetSnap.data());
-          const ratingCount = target.ratingCount + 1;
-          const ratingAvg = round2((target.ratingAvg * target.ratingCount + review.rating) / ratingCount);
-          await updateDoc(doc(db, 'users', targetUserId), {
-            ratingAvg,
-            ratingCount,
-            recentReviews: [review, ...target.recentReviews].slice(0, 5),
-          });
-        }
-      } catch {
-        // Aggregate update is best-effort; the review itself is stored.
-      }
+      const batch = writeBatch(db);
+      batch.set(doc(db, 'jobs', jobId, sub, user.id), review);
+      batch.update(doc(db, 'jobs', jobId), { reviewedBy: arrayUnion(user.id) });
+      await batch.commit();
       await fbNotify(targetUserId, 'review', 'New review received', `${user.name} rated you ${review.rating}★ on "${job.title}".`, jobId);
       await sendEventPush('review_submitted', jobId);
       return null;
@@ -1317,7 +1343,7 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
     }
     try {
       const { db } = getFirebase();
-      const snap = await getDoc(doc(db, 'users', userId));
+      const snap = await getDoc(doc(db, 'publicProfiles', userId));
       return snap.exists() ? toPublicProfile(mapUser(snap.id, snap.data())) : null;
     } catch {
       return null;
@@ -1392,8 +1418,8 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
       const { db } = getFirebase();
       // Single-field queries only — no composite index required.
       const q = category
-        ? query(collection(db, 'users'), where('role', '==', 'provider'), where('categories', 'array-contains', category), limit(60))
-        : query(collection(db, 'users'), where('role', '==', 'provider'), limit(60));
+        ? query(collection(db, 'publicProfiles'), where('role', '==', 'provider'), where('categories', 'array-contains', category), limit(60))
+        : query(collection(db, 'publicProfiles'), where('role', '==', 'provider'), limit(60));
       const snap = await getDocs(q);
       let results = snap.docs.map((d) => toPublicProfile(mapUser(d.id, d.data())));
       if (name) {
@@ -1457,7 +1483,7 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
     try {
       const { db } = getFirebase();
       // Validate target exists and is a provider before creating the chat.
-      const providerSnap = await getDoc(doc(db, 'users', providerId));
+      const providerSnap = await getDoc(doc(db, 'publicProfiles', providerId));
       if (!providerSnap.exists()) return { error: 'Provider not found.' };
       const providerData = providerSnap.data();
       if (providerData?.role !== 'provider') return { error: 'You can only message service providers.' };
@@ -1533,7 +1559,25 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
     }
     try {
       const { db } = getFirebase();
-      await updateDoc(doc(db, 'users', user.id), clean);
+      const publicKeys = new Set([
+        'name',
+        'workArea',
+        'bio',
+        'categories',
+        'priceRange',
+        'companyInfo',
+        'avatarUrl',
+        'availableForWork',
+      ]);
+      const publicChanges = Object.fromEntries(Object.entries(clean).filter(([key]) => publicKeys.has(key)));
+      const batch = writeBatch(db);
+      batch.update(doc(db, 'users', user.id), clean);
+      if (Object.keys(publicChanges).length > 0) {
+        // set(..., merge) also repairs the public profile of accounts created
+        // before this privacy split was introduced.
+        batch.set(doc(db, 'publicProfiles', user.id), { ...publicProfileDoc(user), ...publicChanges }, { merge: true });
+      }
+      await batch.commit();
       return null;
     } catch (e) {
       return friendlyError(e);

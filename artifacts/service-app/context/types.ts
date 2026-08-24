@@ -228,6 +228,17 @@ export function formatMonthYear(ms: number): string {
   return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
 }
 
+export function formatScheduledAt(value: string): string {
+  // New jobs store an ISO timestamp so the selected day/time is unambiguous.
+  // Keep showing the legacy human-readable values already stored in Firestore.
+  if (!/^\d{4}-\d{2}-\d{2}T/.test(value)) return value;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const dateLabel = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  const timeLabel = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  return `${dateLabel} · ${timeLabel}`;
+}
+
 export function greetingForNow(): string {
   const h = new Date().getHours();
   if (h < 12) return 'Good morning';

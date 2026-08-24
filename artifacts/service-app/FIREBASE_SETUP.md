@@ -48,6 +48,23 @@ Follow these steps once to go live.
    [`firestore.rules`](./firestore.rules) in this folder → **Publish**.
 3. No composite indexes are needed — the app only uses single-field queries.
 
+### What the rules protect
+
+- `/users/{uid}` is private to its owner. It contains the email address, saved jobs/providers,
+  blocked users, and notification preferences.
+- `/publicProfiles/{uid}` contains only the fields needed to show employers and providers in
+  the marketplace. Any signed-in user may read this collection.
+- Jobs, chat membership, messages, notifications, reports, reviews, quotes, payments, and
+  lifecycle updates are checked for the correct participant, role, fields, and transition.
+- Rating summaries are **not writable by the mobile client**. Reviews are stored immutably;
+  calculate aggregate rating fields from a trusted server or Cloud Function when one is added.
+
+### Existing accounts
+
+The app automatically creates a matching `/publicProfiles/{uid}` document the next time an
+existing user signs in. Ask active employers and providers to open the updated app once after
+publishing the rules before relying on provider search or starting a new direct chat.
+
 ## 5. Enable Storage (profile photos)
 
 1. Build → **Storage** → Get started → same region.
@@ -75,6 +92,18 @@ so a restart is required for changes to take effect.
 That's it — the auth screen will stop showing the demo accounts and start using real
 Firebase accounts.
 
+## Run the Firestore permission tests
+
+The repository includes an emulator test suite covering allowed and denied operations for
+private profiles, jobs, chats, messages, notifications, reviews, reports, and disabled users.
+
+```bash
+pnpm --filter @workspace/service-app run test:rules
+```
+
+The command starts a local Firestore emulator and does not touch your Firebase project. It
+requires Java 21 or newer; the Replit workspace is configured with it already.
+
 ## Troubleshooting
 
 - **Still in demo mode?** All six `EXPO_PUBLIC_FIREBASE_*` secrets must be present, then
@@ -83,3 +112,5 @@ Firebase accounts.
 - **Google popup fails on web**: the Replit URL is missing from Authorized JavaScript
   origins (step 3), or third-party cookies are blocked.
 - **`permission-denied` in Firestore**: rules from step 4 weren't published.
+- **Provider search or direct chat is empty after publishing rules**: the provider needs to
+  sign in once so the app can create their public profile document.

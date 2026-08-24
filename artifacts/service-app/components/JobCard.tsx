@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { StatusBadge } from '@/components/AppPrimitives';
-import { CATEGORY_ICONS, Job, timeAgo, useServiceApp } from '@/context/ServiceAppContext';
+import { CATEGORY_ICONS, formatScheduledAt, Job, timeAgo, useServiceApp } from '@/context/ServiceAppContext';
 import { useColors } from '@/hooks/useColors';
 
 export function JobCard({ job, showSave = true }: { job: Job; showSave?: boolean }) {
@@ -54,7 +54,7 @@ export function JobCard({ job, showSave = true }: { job: Job; showSave?: boolean
           <View style={[styles.scheduleChip, { backgroundColor: colors.background }]}>
             <Ionicons name="calendar-outline" size={13} color={colors.mutedForeground} />
             <Text numberOfLines={1} style={[styles.scheduleText, { color: colors.mutedForeground }]}>
-              {job.leaveTimeToEmployee ? 'Provider picks time' : job.scheduledAt}
+              {job.leaveTimeToEmployee ? 'Provider picks time' : formatScheduledAt(job.scheduledAt)}
             </Text>
           </View>
         ) : null}

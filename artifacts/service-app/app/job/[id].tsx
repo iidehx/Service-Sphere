@@ -18,6 +18,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import {
   CATEGORY_ICONS,
   chatIdForJob,
+  formatScheduledAt,
   PLATFORM_FEE_RATE,
   round2,
   timeAgo,
@@ -171,7 +172,7 @@ export default function JobDetailScreen() {
             <View style={[styles.infoItem, { flex: 1.6 }]}>
               <Text style={[styles.infoLabel, { color: colors.mutedForeground }]}>Schedule</Text>
               <Text style={[styles.infoValue, { color: colors.foreground, fontSize: 13.5 }]} numberOfLines={2}>
-                {job.leaveTimeToEmployee ? 'Provider suggests a time' : job.scheduledAt || 'Not set'}
+                {job.leaveTimeToEmployee ? 'Provider suggests a time' : formatScheduledAt(job.scheduledAt) || 'Not set'}
               </Text>
             </View>
           </View>
