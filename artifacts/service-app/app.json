@@ -15,7 +15,8 @@
       "backgroundColor": "#F8FAFC"
     },
     "ios": {
-      "supportsTablet": false
+      "supportsTablet": false,
+      "bundleIdentifier": "com.serviceapp.marketplace"
     },
     "android": {
       "package": "com.serviceapp.marketplace",
