@@ -89,7 +89,6 @@ export default function AuthScreen() {
   // On web we use Firebase signInWithPopup instead (no redirect URI config needed).
   const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
     clientId: googleWebClientId || 'unconfigured.apps.googleusercontent.com',
-    useProxy: true,
   });
 
   useEffect(() => {
@@ -325,28 +324,6 @@ export default function AuthScreen() {
             </Pressable>
           ) : null}
         </View>
-
-        {formMode !== 'reset' ? (
-          <>
-            <View style={styles.dividerRow}>
-              <View style={[styles.divider, { backgroundColor: colors.border }]} />
-              <Text style={[styles.dividerText, { color: colors.mutedForeground }]}>or continue with</Text>
-              <View style={[styles.divider, { backgroundColor: colors.border }]} />
-            </View>
-            <Pressable
-              testID="google-signin"
-              disabled={authBusy || (mode === 'firebase' && !request && Boolean(googleWebClientId))}
-              onPress={() => startGoogle(formMode === 'register' ? 'register' : 'login')}
-              style={({ pressed }) => [
-                styles.googleButton,
-                { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
-              ]}
-            >
-              <Ionicons name="logo-google" size={18} color="#DB4437" />
-              <Text style={[styles.googleText, { color: colors.foreground }]}>Continue with Google</Text>
-            </Pressable>
-          </>
-        ) : null}
 
         {mode === 'demo' ? (
           <Card style={{ marginTop: 22, gap: 10 }}>
