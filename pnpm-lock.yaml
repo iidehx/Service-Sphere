@@ -769,7 +769,7 @@ importers:
         version: 7.3.2(firebase-admin@13.10.0(@firebase/app-compat@0.5.16)(@firebase/app@0.16.0))
     devDependencies:
       '@types/node':
-        specifier: 'catalog:'
+        specifier: ^25.3.3
         version: 25.9.5
       typescript:
         specifier: ~5.9.2

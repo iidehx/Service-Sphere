@@ -25,7 +25,10 @@ initializeApp();
  * owns the actual sign-in identity. Delete both through Admin SDK credentials
  * so a removed account no longer reserves its email address.
  */
-export const deleteAccount = onCall(async (request) => {
+// Callable endpoints must allow the browser to reach the function so its
+// Firebase Auth token can be verified below. The callable still rejects every
+// unauthenticated request before touching account data.
+export const deleteAccount = onCall({ cors: true, invoker: "public" }, async (request) => {
   const uid = request.auth?.uid;
   if (!uid) {
     throw new HttpsError("unauthenticated", "Sign in before deleting your account.");

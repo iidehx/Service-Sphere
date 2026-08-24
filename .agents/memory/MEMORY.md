@@ -1,3 +1,4 @@
 - [Metro image-size compatibility](metro-image-size-compatibility.md) — Expo Metro needs image-size v1 API; apply parser hardening as a v1 patch.
 - [Expo logout routing](expo-logout-routing.md) — tabs and root share `/`; logout must target the explicit login route.
 - [Firebase account lifecycle security](firebase-account-lifecycle-security.md) — verification and deletion must be enforced by Firebase rules and trusted backend code, not just app UI.
+- [Browser callable invocation](browser-callable-invocation.md) — browser callables need public Cloud Run invocation for CORS, while authentication remains enforced inside the function.
