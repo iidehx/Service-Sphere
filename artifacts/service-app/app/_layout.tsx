@@ -153,8 +153,6 @@ function RootLayoutNav() {
       router.replace('/login');
     } else if (user && !needsRole && EMAIL_VERIFICATION_REQUIRED && !emailVerified && !isOnVerification) {
       router.replace('/verify-email');
-    } else if (user && !needsRole && (!EMAIL_VERIFICATION_REQUIRED || emailVerified) && !isInTabs && !isOnLogin) {
-      router.replace('/(tabs)');
     } else if (user && !needsRole && (!EMAIL_VERIFICATION_REQUIRED || emailVerified) && isOnLogin) {
       router.replace('/(tabs)');
     }
