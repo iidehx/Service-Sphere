@@ -723,6 +723,20 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
     }
     try {
       const { db } = getFirebase();
+      const accountSnapshot = await getDoc(doc(db, 'users', user.id));
+      if (!accountSnapshot.exists()) {
+        return 'Your Firestore account profile is missing. Create /users/' + user.id + ' with role set to "employer", then sign out and back in.';
+      }
+
+      const account = accountSnapshot.data();
+      if (account.disabled === true) {
+        return 'This account has been disabled and cannot post jobs.';
+      }
+      if (account.role !== 'employer') {
+        const storedRole = typeof account.role === 'string' ? `"${account.role}"` : 'missing';
+        return `Your Firestore account role is ${storedRole}. It must be exactly "employer" (lowercase) to post jobs.`;
+      }
+
       await addDoc(collection(db, 'jobs'), payload);
       return null;
     } catch (e) {
