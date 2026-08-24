@@ -4,10 +4,10 @@ import { useColors } from '@/hooks/useColors';
 import { Feather } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { isLiquidGlassAvailable } from 'expo-glass-effect';
-import { Redirect, Tabs } from 'expo-router';
+import { Tabs } from 'expo-router';
 import { Icon, Label, NativeTabs } from 'expo-router/unstable-native-tabs';
-import { SymbolView } from 'expo-symbols';
 import { useServiceApp } from '@/context/ServiceAppContext';
+import { SymbolView } from 'expo-symbols';
 
 // IMPORTANT: iOS 26 uses NativeTabs for native tabs with liquid glass support.
 // NativeTabs intentionally does NOT use custom design tokens — liquid glass
@@ -123,10 +123,6 @@ function ClassicTabLayout() {
 }
 
 export default function TabLayout() {
-  const { ready, user } = useServiceApp();
-  if (ready && !user) {
-    return <Redirect href="/" />;
-  }
   if (isLiquidGlassAvailable()) {
     return <NativeTabLayout />;
   }

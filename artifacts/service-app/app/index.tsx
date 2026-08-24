@@ -4,7 +4,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
-import { Redirect } from 'expo-router';
 import { AppLogo, Card, Field, GhostButton, PrimaryButton, Screen } from '@/components/AppPrimitives';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { GoogleIntent, isValidEmail, Role, useServiceApp } from '@/context/ServiceAppContext';
@@ -114,10 +113,6 @@ export default function AuthScreen() {
         <ActivityIndicator color={colors.primary} size="large" />
       </Screen>
     );
-  }
-
-  if (user && !needsRole) {
-    return <Redirect href="/(tabs)" />;
   }
 
   const startGoogle = async (intent: GoogleIntent) => {

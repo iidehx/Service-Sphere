@@ -12,11 +12,11 @@ import {
   Inter_700Bold,
   useFonts,
 } from '@expo-google-fonts/inter';
-import { Stack } from 'expo-router';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
-import { ServiceAppContext, ServiceAppProvider } from '@/context/ServiceAppContext';
+import { ServiceAppContext, ServiceAppProvider, useServiceApp } from '@/context/ServiceAppContext';
 import { getFirebase, isFirebaseConfigured } from '@/lib/firebase';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
@@ -136,6 +136,24 @@ function PushRegistrar() {
 }
 
 function RootLayoutNav() {
+  const router = useRouter();
+  const segments = useSegments();
+  const { ready, user, needsRole } = useServiceApp();
+  const isInTabs = segments[0] === '(tabs)';
+
+  useEffect(() => {
+    if (!ready) return;
+
+    // Route groups are URL-transparent: both / and /(tabs) display as the
+    // root path. Send anonymous users to the explicit login route so the tab
+    // navigator is unmounted instead of leaving an empty tab screen behind.
+    if (!user && isInTabs) {
+      router.replace('/login');
+    } else if (user && !needsRole && !isInTabs) {
+      router.replace('/(tabs)');
+    }
+  }, [isInTabs, needsRole, ready, router, user]);
+
   return (
     <Stack screenOptions={{ headerBackTitle: 'Back', headerShown: false }}>
       <Stack.Screen name="index" />

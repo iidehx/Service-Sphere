@@ -98,6 +98,15 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const { mode, user, updateProfile, signOutUser, demoSignIn } = useServiceApp();
   const [showBlocked, setShowBlocked] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+
+  useEffect(() => {
+    if (!signingOut || user) return;
+
+    // /(tabs) and / share the same visible URL. Use the explicit login route
+    // after Firebase clears the account so Expo Router unmounts the tab shell.
+    router.replace('/login');
+  }, [router, signingOut, user]);
 
   if (!user) return null;
   const isEmployer = user.role === 'employer';
@@ -197,12 +206,13 @@ export default function ProfileScreen() {
           <SettingsRow icon="help-buoy-outline" label="Help & safety" onPress={() => router.push('/help')} testID="row-help" />
           <SettingsRow
             icon="log-out-outline"
-            label="Sign out"
+            label={signingOut ? 'Signing out…' : 'Sign out'}
             tone="destructive"
             testID="row-signout"
             onPress={async () => {
+              if (signingOut) return;
+              setSigningOut(true);
               await signOutUser();
-              router.replace('/');
             }}
           />
         </Card>
