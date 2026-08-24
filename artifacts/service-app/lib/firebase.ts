@@ -29,6 +29,11 @@ export const isFirebaseConfigured = Boolean(
 
 export const googleWebClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? '';
 
+// Temporarily disabled at the user's request. Keep the verification screen and
+// resend logic available so the requirement can be restored once Firebase email
+// delivery is configured.
+export const EMAIL_VERIFICATION_REQUIRED = false;
+
 let app: FirebaseApp | null = null;
 let auth: Auth | null = null;
 let db: Firestore | null = null;

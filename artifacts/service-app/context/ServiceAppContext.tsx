@@ -35,7 +35,7 @@ import {
 } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
-import { getFirebase, isFirebaseConfigured } from '@/lib/firebase';
+import { EMAIL_VERIFICATION_REQUIRED, getFirebase, isFirebaseConfigured } from '@/lib/firebase';
 import {
   AppNotification,
   Chat,
@@ -308,7 +308,7 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
   // Firebase-mode state
   const [authUid, setAuthUid] = useState<string | null>(null);
   const [fbUser, setFbUser] = useState<SessionUser | null>(null);
-  const [emailVerified, setEmailVerified] = useState(mode === 'demo');
+  const [emailVerified, setEmailVerified] = useState(mode === 'demo' || !EMAIL_VERIFICATION_REQUIRED);
   const [hasPasswordAuth, setHasPasswordAuth] = useState(false);
   const [fbJobs, setFbJobs] = useState<Job[]>([]);
   const [fbChats, setFbChats] = useState<Chat[]>([]);
@@ -372,12 +372,12 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
     const unsub = onAuthStateChanged(auth, (u) => {
       if (u) {
         setAuthUid(u.uid);
-        setEmailVerified(Boolean(u.emailVerified));
+        setEmailVerified(!EMAIL_VERIFICATION_REQUIRED || Boolean(u.emailVerified));
         setHasPasswordAuth(u.providerData.some((provider) => provider.providerId === 'password'));
       } else {
         accountDeletionInFlight.current = false;
         setAuthUid(null);
-        setEmailVerified(false);
+        setEmailVerified(!EMAIL_VERIFICATION_REQUIRED);
         setHasPasswordAuth(false);
         setFbUser(null);
         setFbJobs([]);
@@ -727,7 +727,7 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
       // Firestore rules read the verified-email claim from the ID token, not
       // the reloaded user object. Refresh it before routing into the app.
       await currentUser.getIdToken(true);
-      const verified = Boolean(currentUser.emailVerified);
+      const verified = !EMAIL_VERIFICATION_REQUIRED || Boolean(currentUser.emailVerified);
       setEmailVerified(verified);
       return verified;
     } catch (e) {
@@ -1736,7 +1736,7 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
       ready,
       authBusy,
       user,
-      emailVerified: mode === 'demo' ? true : emailVerified,
+      emailVerified: mode === 'demo' || !EMAIL_VERIFICATION_REQUIRED ? true : emailVerified,
       hasPasswordAuth,
       needsRole,
       jobs,
