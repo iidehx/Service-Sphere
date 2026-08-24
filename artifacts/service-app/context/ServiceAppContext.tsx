@@ -2,9 +2,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, ReactNode, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createUserWithEmailAndPassword,
+  EmailAuthProvider,
   GoogleAuthProvider,
   onAuthStateChanged,
+  reauthenticateWithCredential,
+  reload,
   sendPasswordResetEmail,
+  sendEmailVerification,
   signInWithCredential,
   signInWithEmailAndPassword,
   signInWithPopup,
@@ -29,6 +33,7 @@ import {
   where,
   writeBatch,
 } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import { getFirebase, isFirebaseConfigured } from '@/lib/firebase';
 import {
@@ -83,6 +88,8 @@ type ServiceAppContextValue = {
   ready: boolean;
   authBusy: boolean;
   user: SessionUser | null;
+  emailVerified: boolean;
+  hasPasswordAuth: boolean;
   needsRole: boolean;
   jobs: Job[];
   chats: Chat[];
@@ -96,6 +103,9 @@ type ServiceAppContextValue = {
   loginWithGooglePopup: (intent: GoogleIntent) => Promise<string | null>;
   completeRoleSelection: (role: Role) => Promise<string | null>;
   resetPassword: (email: string) => Promise<string | null>;
+  sendVerificationEmail: () => Promise<string | null>;
+  refreshEmailVerification: () => Promise<string | null>;
+  deleteAccount: (password?: string) => Promise<string | null>;
   signOutUser: () => Promise<void>;
   demoSignIn: (role: Role) => Promise<void>;
   // Jobs
@@ -296,6 +306,8 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
   // Firebase-mode state
   const [authUid, setAuthUid] = useState<string | null>(null);
   const [fbUser, setFbUser] = useState<SessionUser | null>(null);
+  const [emailVerified, setEmailVerified] = useState(mode === 'demo');
+  const [hasPasswordAuth, setHasPasswordAuth] = useState(false);
   const [fbJobs, setFbJobs] = useState<Job[]>([]);
   const [fbChats, setFbChats] = useState<Chat[]>([]);
   const [fbNotifs, setFbNotifs] = useState<AppNotification[]>([]);
@@ -306,6 +318,7 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
 
   const googleIntent = useRef<GoogleIntent | null>(null);
   const docWriteInFlight = useRef(false);
+  const accountDeletionInFlight = useRef(false);
 
   const writeNewUserDocs = async (
     db: ReturnType<typeof getFirebase>['db'],
@@ -357,8 +370,13 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
     const unsub = onAuthStateChanged(auth, (u) => {
       if (u) {
         setAuthUid(u.uid);
+        setEmailVerified(Boolean(u.emailVerified));
+        setHasPasswordAuth(u.providerData.some((provider) => provider.providerId === 'password'));
       } else {
+        accountDeletionInFlight.current = false;
         setAuthUid(null);
+        setEmailVerified(false);
+        setHasPasswordAuth(false);
         setFbUser(null);
         setFbJobs([]);
         setFbChats([]);
@@ -387,7 +405,7 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
           setNeedsRole(false);
           googleIntent.current = null;
           setReady(true);
-        } else if (!docWriteInFlight.current) {
+        } else if (!docWriteInFlight.current && !accountDeletionInFlight.current) {
           if (googleIntent.current === 'register') {
             // First Google sign-up: ask which role they want before creating the doc.
             setNeedsRole(true);
@@ -590,6 +608,8 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
         // Display name is cosmetic; continue.
       }
       await writeNewUserDocs(db, cred.user.uid, newUserDoc(cleanName, cleanEmail, role));
+      await sendEmailVerification(cred.user);
+      setEmailVerified(false);
       return null;
     } catch (e) {
       return friendlyError(e);
@@ -679,6 +699,97 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
       return null;
     } catch (e) {
       return friendlyError(e);
+    }
+  };
+
+  const sendVerificationEmail = async () => {
+    if (mode === 'demo') return 'Email verification is available when Firebase is connected.';
+    try {
+      const { auth } = getFirebase();
+      const currentUser = auth.currentUser;
+      if (!currentUser) return 'Your session expired. Please sign in again.';
+      await sendEmailVerification(currentUser);
+      return null;
+    } catch (e) {
+      return friendlyError(e);
+    }
+  };
+
+  const refreshEmailVerification = async () => {
+    if (mode === 'demo') return null;
+    try {
+      const { auth } = getFirebase();
+      const currentUser = auth.currentUser;
+      if (!currentUser) return 'Your session expired. Please sign in again.';
+      await reload(currentUser);
+      // Firestore rules read the verified-email claim from the ID token, not
+      // the reloaded user object. Refresh it before routing into the app.
+      await currentUser.getIdToken(true);
+      setEmailVerified(Boolean(currentUser.emailVerified));
+      return null;
+    } catch (e) {
+      return friendlyError(e);
+    }
+  };
+
+  const deleteAccount = async (password?: string) => {
+    if (!user) return 'Please sign in first.';
+    if (mode === 'demo') {
+      updateDemo((d) => {
+        const users = { ...d.users };
+        delete users[user.id];
+        return { ...d, users, sessionUserId: null };
+      });
+      return null;
+    }
+
+    setAuthBusy(true);
+    try {
+      const { app, auth } = getFirebase();
+      const currentUser = auth.currentUser;
+      if (!currentUser) return 'Your session expired. Please sign in again.';
+
+      const usesPassword = currentUser.providerData.some((provider) => provider.providerId === 'password');
+      if (usesPassword) {
+        if (!password) return 'Enter your current password to delete this account.';
+        if (!currentUser.email) return 'Your account does not have an email address for re-authentication.';
+        await reauthenticateWithCredential(
+          currentUser,
+          EmailAuthProvider.credential(currentUser.email, password),
+        );
+      }
+      // Force a fresh ID token after re-authentication so the server can
+      // enforce its short recent-login window for every provider.
+      await currentUser.getIdToken(true);
+
+      const removeAccount = httpsCallable<{ ok?: boolean }, { ok: boolean }>(
+        getFunctions(app),
+        'deleteAccount',
+      );
+      // Keep the profile listener from recreating a document while the
+      // callable is removing it. If Auth deletion fails, the user remains
+      // authenticated and can retry this same action safely.
+      accountDeletionInFlight.current = true;
+      await removeAccount();
+      await fbSignOut(auth);
+      return null;
+    } catch (e) {
+      const code = String((e as { code?: unknown })?.code ?? '');
+      if (code.includes('functions/not-found') || code.includes('functions/unavailable')) {
+        return 'Account deletion is not available yet. Publish the Firebase Functions update, then try again.';
+      }
+      if (code.includes('requires-recent-login')) {
+        return 'For your security, sign out and sign in again before deleting your account.';
+      }
+      if (code.includes('failed-precondition')) {
+        return 'For your security, sign out and sign in again before deleting your account.';
+      }
+      if (code.includes('wrong-password') || code.includes('invalid-credential')) {
+        return 'That password is incorrect.';
+      }
+      return friendlyError(e);
+    } finally {
+      setAuthBusy(false);
     }
   };
 
@@ -1622,6 +1733,8 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
       ready,
       authBusy,
       user,
+      emailVerified: mode === 'demo' ? true : emailVerified,
+      hasPasswordAuth,
       needsRole,
       jobs,
       chats,
@@ -1634,6 +1747,9 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
       loginWithGooglePopup,
       completeRoleSelection,
       resetPassword,
+      sendVerificationEmail,
+      refreshEmailVerification,
+      deleteAccount,
       signOutUser,
       demoSignIn,
       addJob,

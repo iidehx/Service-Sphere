@@ -1,4 +1,5 @@
 import { initializeApp } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
 import {
   type DocumentSnapshot,
   type Firestore,
@@ -6,8 +7,11 @@ import {
   getFirestore,
 } from "firebase-admin/firestore";
 import { logger } from "firebase-functions";
+import { auth as authFunctions } from "firebase-functions/v1";
 import { onDocumentCreated } from "firebase-functions/v2/firestore";
+import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { publicProfileFromUser } from "./publicProfile.js";
+import { deleteAccountResources } from "./accountDeletion.js";
 import {
   buildRatingSummary,
   publicReviewFromData,
@@ -15,6 +19,75 @@ import {
 } from "./ratingAggregate.js";
 
 initializeApp();
+
+/**
+ * Account profile documents are private to their owner while Firebase Auth
+ * owns the actual sign-in identity. Delete both through Admin SDK credentials
+ * so a removed account no longer reserves its email address.
+ */
+export const deleteAccount = onCall(async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "Sign in before deleting your account.");
+  }
+  const authTime = request.auth?.token.auth_time;
+  const nowInSeconds = Math.floor(Date.now() / 1000);
+  if (typeof authTime !== "number" || nowInSeconds - authTime > 5 * 60) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Sign out and sign in again before deleting your account.",
+    );
+  }
+
+  const db = getFirestore();
+  try {
+    await deleteAccountResources({
+      markDeleting: async () => {
+        await db.collection("accountTombstones").doc(uid).set({
+          requestedAtMs: Date.now(),
+        });
+      },
+      deleteIdentity: async () => {
+        try {
+          await getAuth().deleteUser(uid);
+        } catch (error) {
+          const code = (error as { code?: unknown })?.code;
+          if (code !== "auth/user-not-found") throw error;
+          logger.warn({ uid }, "Account identity was already deleted");
+        }
+      },
+      deleteProfiles: async () => {
+        const batch = db.batch();
+        batch.delete(db.collection("users").doc(uid));
+        batch.delete(db.collection("publicProfiles").doc(uid));
+        await batch.commit();
+      },
+    });
+    logger.info({ uid }, "Deleted account identity and profile documents");
+    return { ok: true };
+  } catch (error) {
+    logger.error({ uid, error }, "Account deletion failed");
+    throw new HttpsError(
+      "internal",
+      "We could not delete your account. Please try again after signing in again.",
+    );
+  }
+});
+
+/**
+ * Covers interrupted callable executions: once Firebase Auth confirms an
+ * identity was deleted, retry profile cleanup independently of the client.
+ * The tombstone deliberately remains so an old cached session cannot recreate
+ * documents for the removed UID.
+ */
+export const cleanDeletedAccountProfiles = authFunctions.user().onDelete(async (user) => {
+  const db = getFirestore();
+  const batch = db.batch();
+  batch.delete(db.collection("users").doc(user.uid));
+  batch.delete(db.collection("publicProfiles").doc(user.uid));
+  await batch.commit();
+  logger.info({ uid: user.uid }, "Cleaned profiles after Auth account deletion");
+});
 
 const REVIEW_COLLECTIONS = ["review", "employerReview"] as const;
 type ReviewCollection = (typeof REVIEW_COLLECTIONS)[number];

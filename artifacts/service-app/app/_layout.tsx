@@ -138,8 +138,10 @@ function PushRegistrar() {
 function RootLayoutNav() {
   const router = useRouter();
   const segments = useSegments();
-  const { ready, user, needsRole } = useServiceApp();
+  const { ready, user, emailVerified, needsRole } = useServiceApp();
   const isInTabs = segments[0] === '(tabs)';
+  const isOnLogin = segments[0] === 'login' || segments[0] === undefined;
+  const isOnVerification = segments[0] === 'verify-email';
 
   useEffect(() => {
     if (!ready) return;
@@ -147,12 +149,16 @@ function RootLayoutNav() {
     // Route groups are URL-transparent: both / and /(tabs) display as the
     // root path. Send anonymous users to the explicit login route so the tab
     // navigator is unmounted instead of leaving an empty tab screen behind.
-    if (!user && isInTabs) {
+    if (!user && (isInTabs || isOnVerification)) {
       router.replace('/login');
-    } else if (user && !needsRole && !isInTabs) {
+    } else if (user && !needsRole && !emailVerified && !isOnVerification) {
+      router.replace('/verify-email');
+    } else if (user && !needsRole && emailVerified && !isInTabs && !isOnLogin) {
+      router.replace('/(tabs)');
+    } else if (user && !needsRole && emailVerified && isOnLogin) {
       router.replace('/(tabs)');
     }
-  }, [isInTabs, needsRole, ready, router, user]);
+  }, [emailVerified, isInTabs, isOnLogin, isOnVerification, needsRole, ready, router, user]);
 
   return (
     <Stack screenOptions={{ headerBackTitle: 'Back', headerShown: false }}>

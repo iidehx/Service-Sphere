@@ -12,6 +12,7 @@ import {
   deleteDoc,
   doc,
   getDoc,
+  getDocs,
   setDoc,
   updateDoc,
   writeBatch,
@@ -156,7 +157,7 @@ async function seed() {
   });
 }
 
-const dbFor = (uid) => testEnv.authenticatedContext(uid).firestore();
+const dbFor = (uid, claims = { email_verified: true }) => testEnv.authenticatedContext(uid, claims).firestore();
 
 before(async () => {
   testEnv = await initializeTestEnvironment({
@@ -193,6 +194,81 @@ test('private profiles are owner-only while public profiles are discoverable', a
   await assertFails(updateDoc(doc(employer, 'users/employer'), { ratingAvg: 5 }));
   await assertFails(updateDoc(doc(employer, 'publicProfiles/employer'), { ratingCount: 1 }));
   await assertFails(updateDoc(doc(provider, 'users/employer'), { blockedUserIds: ['other'] }));
+  await assertFails(deleteDoc(doc(employer, 'publicProfiles/employer')));
+  await assertFails(deleteDoc(doc(employer, 'users/employer')));
+  await assertFails(deleteDoc(doc(provider, 'publicProfiles/employer')));
+  await assertFails(deleteDoc(doc(provider, 'users/employer')));
+});
+
+test('unverified accounts can provision profiles but cannot write marketplace data', async () => {
+  await seed();
+  const unverified = dbFor('unverified', { email_verified: false });
+  const accountSetup = writeBatch(unverified);
+  accountSetup.set(doc(unverified, 'users/unverified'), privateUser('employer', 'Unverified Employer'));
+  accountSetup.set(doc(unverified, 'publicProfiles/unverified'), publicProfile('employer', 'Unverified Employer'));
+  await assertSucceeds(accountSetup.commit());
+
+  await assertFails(setDoc(doc(unverified, 'jobs/unverified-job'), job({
+    employerId: 'unverified',
+    employerName: 'Unverified Employer',
+  })));
+  await assertFails(updateDoc(doc(unverified, 'users/unverified'), { blockedUserIds: ['provider'] }));
+
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'chats/unverified-chat'), {
+      participants: ['unverified', 'provider'],
+      participantNames: { unverified: 'Unverified Employer', provider: 'Provider' },
+      jobId: 'unverified-job',
+      jobTitle: 'Unverified work',
+      lastMessageText: 'Hello',
+      lastMessageAtMs: 1,
+      lastReadAt: {},
+      createdAtMs: 1,
+    });
+    await setDoc(doc(db, 'chats/unverified-chat/messages/message-1'), {
+      senderId: 'provider',
+      senderName: 'Provider',
+      text: 'Hello',
+      kind: 'text',
+      createdAtMs: 1,
+    });
+    await setDoc(doc(db, 'notifications/unverified-note'), {
+      userId: 'unverified',
+      kind: 'job',
+      title: 'New job',
+      body: 'Verification required',
+      read: false,
+      createdAtMs: 1,
+    });
+  });
+
+  await assertFails(getDocs(collection(unverified, 'jobs')));
+  await assertFails(getDoc(doc(unverified, 'publicProfiles/provider')));
+  await assertFails(getDoc(doc(unverified, 'chats/unverified-chat')));
+  await assertFails(getDocs(collection(unverified, 'chats/unverified-chat/messages')));
+  await assertFails(updateDoc(doc(unverified, 'notifications/unverified-note'), { read: true }));
+  await assertFails(deleteDoc(doc(unverified, 'notifications/unverified-note')));
+});
+
+test('a pending deletion prevents every session from restoring an account profile', async () => {
+  await seed();
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await deleteDoc(doc(db, 'users/employer'));
+    await deleteDoc(doc(db, 'publicProfiles/employer'));
+    await setDoc(doc(db, 'accountTombstones/employer'), { requestedAtMs: 1 });
+  });
+
+  const employer = dbFor('employer');
+  await assertFails(setDoc(doc(employer, 'jobs/deleted-account-job'), job({
+    employerId: 'employer',
+    employerName: 'Employer',
+  })));
+  const restoreProfile = writeBatch(employer);
+  restoreProfile.set(doc(employer, 'users/employer'), privateUser('employer', 'Employer'));
+  restoreProfile.set(doc(employer, 'publicProfiles/employer'), publicProfile('employer', 'Employer'));
+  await assertFails(restoreProfile.commit());
 });
 
 test('new accounts must start with an empty server-managed rating summary', async () => {

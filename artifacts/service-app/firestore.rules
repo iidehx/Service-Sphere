@@ -16,6 +16,14 @@ service cloud.firestore {
       return /databases/$(database)/documents/users/$(userId);
     }
 
+    function deletionPath(userId) {
+      return /databases/$(database)/documents/accountTombstones/$(userId);
+    }
+
+    function isPendingDeletion(userId) {
+      return exists(deletionPath(userId));
+    }
+
     function profilePath(userId) {
       return /databases/$(database)/documents/publicProfiles/$(userId);
     }
@@ -27,6 +35,15 @@ service cloud.firestore {
 
     function isActive() {
       return signedIn()
+        && request.auth.token.email_verified == true
+        && !isPendingDeletion(request.auth.uid)
+        && (!exists(userPath(request.auth.uid))
+          || !get(userPath(request.auth.uid)).data.get('disabled', false));
+    }
+
+    function canProvisionAccount() {
+      return signedIn()
+        && !isPendingDeletion(request.auth.uid)
         && (!exists(userPath(request.auth.uid))
           || !get(userPath(request.auth.uid)).data.get('disabled', false));
     }
@@ -154,7 +171,7 @@ service cloud.firestore {
     // in /publicProfiles so provider search never exposes private data.
     match /users/{userId} {
       allow read: if isSelf(userId) || isAdmin();
-      allow create: if isSelf(userId) && isActive()
+      allow create: if isSelf(userId) && canProvisionAccount()
         && validUserDocument(request.resource.data)
         && hasEmptyRatingSummary(request.resource.data)
         && request.resource.data.verified == false
@@ -163,12 +180,14 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys()
                .hasOnly(selfEditableUserFields()))
         || isAdmin();
+      // Account deletion must use the trusted callable so Firebase Auth and
+      // both profile documents are removed together.
       allow delete: if false;
     }
 
     match /publicProfiles/{userId} {
-      allow read: if signedIn();
-      allow create: if isSelf(userId) && isActive()
+      allow read: if isActive();
+      allow create: if isSelf(userId) && canProvisionAccount()
         && validPublicProfile(request.resource.data)
         && hasEmptyRatingSummary(request.resource.data)
         && publicProfileMatchesPrivate(userId);
@@ -184,6 +203,10 @@ service cloud.firestore {
     match /admins/{adminId} {
       allow read: if isSelf(adminId);
       allow write: if false;
+    }
+
+    match /accountTombstones/{userId} {
+      allow read, write: if false;
     }
 
     function isJobEmployer() {
@@ -376,7 +399,7 @@ service cloud.firestore {
     match /jobs/{jobId} {
       // The marketplace feed intentionally exposes job details to signed-in
       // providers. It does not include private contact or account fields.
-      allow read: if signedIn();
+      allow read: if isActive();
       allow create: if isActive() && isEmployer() && validJobCreate();
       allow update: if isActive() && (
         isProviderClaim()
@@ -391,7 +414,7 @@ service cloud.firestore {
       allow delete: if isActive() && isJobEmployer() && resource.data.status == 'open';
 
       match /review/{reviewerId} {
-        allow read: if signedIn();
+        allow read: if isActive();
         allow create: if isSelf(reviewerId) && isActive()
           && get(/databases/$(database)/documents/jobs/$(jobId)).data.status == 'completed'
           && get(/databases/$(database)/documents/jobs/$(jobId)).data.employerId == request.auth.uid
@@ -403,7 +426,7 @@ service cloud.firestore {
       }
 
       match /employerReview/{reviewerId} {
-        allow read: if signedIn();
+        allow read: if isActive();
         allow create: if isSelf(reviewerId) && isActive()
           && get(/databases/$(database)/documents/jobs/$(jobId)).data.status == 'completed'
           && get(/databases/$(database)/documents/jobs/$(jobId)).data.get('employeeId', '') == request.auth.uid
@@ -471,7 +494,7 @@ service cloud.firestore {
     }
 
     match /chats/{chatId} {
-      allow read: if signedIn() && request.auth.uid in resource.data.participants;
+      allow read: if isActive() && request.auth.uid in resource.data.participants;
       allow create: if isActive() && validChatDocument()
         && (validJobChatCreate() || validDirectChatCreate());
       allow update: if isActive() && request.auth.uid in resource.data.participants
@@ -479,7 +502,7 @@ service cloud.firestore {
       allow delete: if false;
 
       match /messages/{messageId} {
-        allow read: if signedIn()
+        allow read: if isActive()
           && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
         allow create: if isActive()
           && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants
@@ -510,12 +533,12 @@ service cloud.firestore {
     }
 
     match /notifications/{notificationId} {
-      allow read: if signedIn() && resource.data.userId == request.auth.uid;
+      allow read: if isActive() && resource.data.userId == request.auth.uid;
       allow create: if isActive() && validNotification();
-      allow update: if signedIn() && resource.data.userId == request.auth.uid
+      allow update: if isActive() && resource.data.userId == request.auth.uid
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read'])
         && request.resource.data.read == true;
-      allow delete: if signedIn() && resource.data.userId == request.auth.uid;
+      allow delete: if isActive() && resource.data.userId == request.auth.uid;
     }
 
     match /reports/{reportId} {

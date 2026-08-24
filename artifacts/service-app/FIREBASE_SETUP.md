@@ -31,7 +31,11 @@ Follow these steps once to go live.
 
 1. Build → **Authentication** → Get started.
 2. **Sign-in method** tab → enable **Email/Password**.
-3. (Optional) Enable **Google**. Then:
+3. Open **Templates** → **Email address verification** and customize the sender name,
+   subject, and reply address for Service App. Keep the verification link enabled.
+4. In **Settings** → **Authorized domains**, add every published Service App domain
+   where users may open a verification link.
+5. (Optional) Enable **Google**. Then:
    - Under the Google provider, note the **Web client ID** (also visible in
      Google Cloud Console → APIs & Services → Credentials).
    - Save it in Replit as `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`.
@@ -65,6 +69,26 @@ Follow these steps once to go live.
 The app automatically creates a matching `/publicProfiles/{uid}` document the next time an
 existing user signs in. Ask active employers and providers to open the updated app once after
 publishing the rules before relying on provider search or starting a new direct chat.
+
+### Email verification and account deletion
+
+- New email/password accounts receive Firebase's built-in verification email and cannot use
+  the marketplace until the verification link is opened.
+- Existing email/password accounts that have not verified their email see the same verification
+  screen after signing in. They can resend the email, then use **I've verified my email** to
+  refresh their status.
+- Deleting a document in Firestore does **not** delete the matching Firebase Authentication
+  account, so it does not free the email address for another registration. Use the app's
+  **Profile → Delete account** action instead; it removes both Auth and the private/public
+  Firestore profile documents. The server temporarily blocks all sessions for the removed UID,
+  and its Auth-deletion trigger finishes profile cleanup if a deletion request is interrupted.
+- The delete action is implemented as a Firebase Function. Publish the rules and functions
+  after deploying this app version, or deletion will show an availability message. The deploy
+  automatically builds the function first:
+
+  ```bash
+  pnpm exec firebase deploy --only firestore:rules,functions --config artifacts/service-app/firebase.json
+  ```
 
 ## 5. Enable Storage (profile photos)
 

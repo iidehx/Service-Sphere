@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { Avatar, Card, GhostButton, Screen, SectionTitle, Stars } from '@/components/AppPrimitives';
+import { Avatar, Card, Field, GhostButton, PrimaryButton, Screen, SectionTitle, Stars } from '@/components/AppPrimitives';
 import { Review, timeAgo, useServiceApp } from '@/context/ServiceAppContext';
 import { useColors } from '@/hooks/useColors';
 
@@ -96,17 +96,22 @@ export default function ProfileScreen() {
   const colors = useColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { mode, user, updateProfile, signOutUser, demoSignIn } = useServiceApp();
+  const { mode, user, updateProfile, signOutUser, deleteAccount, hasPasswordAuth, authBusy, demoSignIn } = useServiceApp();
   const [showBlocked, setShowBlocked] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [showDeleteAccount, setShowDeleteAccount] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteError, setDeleteError] = useState('');
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
-    if (!signingOut || user) return;
+    if ((!signingOut && !deleting) || user) return;
 
     // /(tabs) and / share the same visible URL. Use the explicit login route
     // after Firebase clears the account so Expo Router unmounts the tab shell.
     router.replace('/login');
-  }, [router, signingOut, user]);
+  }, [deleting, router, signingOut, user]);
 
   if (!user) return null;
   const isEmployer = user.role === 'employer';
@@ -205,6 +210,18 @@ export default function ProfileScreen() {
           ) : null}
           <SettingsRow icon="help-buoy-outline" label="Help & safety" onPress={() => router.push('/help')} testID="row-help" />
           <SettingsRow
+            icon="trash-outline"
+            label="Delete account"
+            tone="destructive"
+            onPress={() => {
+              setDeleteConfirmation('');
+              setDeletePassword('');
+              setDeleteError('');
+              setShowDeleteAccount(true);
+            }}
+            testID="row-delete-account"
+          />
+          <SettingsRow
             icon="log-out-outline"
             label={signingOut ? 'Signing out…' : 'Sign out'}
             tone="destructive"
@@ -251,6 +268,65 @@ export default function ProfileScreen() {
           </>
         ) : null}
       </ScrollView>
+
+      <Modal
+        visible={showDeleteAccount}
+        transparent
+        animationType="fade"
+        onRequestClose={() => !deleting && setShowDeleteAccount(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <Card style={styles.deleteModal}>
+            <Ionicons name="warning-outline" size={28} color={colors.destructive} />
+            <Text style={[styles.deleteTitle, { color: colors.foreground }]}>Delete your account?</Text>
+            <Text style={[styles.deleteBody, { color: colors.mutedForeground }]}>
+              This permanently removes your profile and sign-in account. Your email can be used to create a new account later.
+            </Text>
+            <Field
+              label='Type DELETE to confirm'
+              value={deleteConfirmation}
+              onChangeText={setDeleteConfirmation}
+              autoCapitalize="characters"
+              testID="delete-confirmation"
+            />
+            {hasPasswordAuth ? (
+              <Field
+                label="Current password"
+                value={deletePassword}
+                onChangeText={setDeletePassword}
+                secureTextEntry
+                autoCapitalize="none"
+                testID="delete-password"
+              />
+            ) : null}
+            {deleteError ? <Text style={[styles.deleteError, { color: colors.destructive }]}>{deleteError}</Text> : null}
+            <View style={styles.deleteActions}>
+              <GhostButton
+                label="Cancel"
+                onPress={() => setShowDeleteAccount(false)}
+                testID="cancel-delete-account"
+                style={{ flex: 1 }}
+              />
+              <PrimaryButton
+                label="Delete account"
+                loading={deleting || authBusy}
+                disabled={deleteConfirmation.trim() !== 'DELETE' || (hasPasswordAuth && !deletePassword)}
+                onPress={async () => {
+                  setDeleting(true);
+                  setDeleteError('');
+                  const error = await deleteAccount(hasPasswordAuth ? deletePassword : undefined);
+                  if (error) {
+                    setDeleteError(error);
+                    setDeleting(false);
+                  }
+                }}
+                testID="confirm-delete-account"
+                style={{ flex: 1, backgroundColor: colors.destructive }}
+              />
+            </View>
+          </Card>
+        </View>
+      </Modal>
     </Screen>
   );
 }
@@ -278,6 +354,17 @@ const styles = StyleSheet.create({
   blockedName: { fontFamily: 'Inter_500Medium', fontSize: 13, flex: 1 },
   unblock: { fontFamily: 'Inter_600SemiBold', fontSize: 12.5 },
   noBlocked: { fontFamily: 'Inter_400Regular', fontSize: 12.5, paddingLeft: 42, paddingBottom: 8 },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    padding: 22,
+    backgroundColor: 'rgba(15, 23, 42, 0.52)',
+  },
+  deleteModal: { gap: 13, maxWidth: 480, width: '100%', alignSelf: 'center' },
+  deleteTitle: { fontFamily: 'Inter_700Bold', fontSize: 19 },
+  deleteBody: { fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 19 },
+  deleteError: { fontFamily: 'Inter_500Medium', fontSize: 12.5, lineHeight: 18 },
+  deleteActions: { flexDirection: 'row', gap: 10, marginTop: 2 },
   demoTitle: { fontFamily: 'Inter_700Bold', fontSize: 14 },
   demoBody: { fontFamily: 'Inter_400Regular', fontSize: 12.5, lineHeight: 18 },
   reviewTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
