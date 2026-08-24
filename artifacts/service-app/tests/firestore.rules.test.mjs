@@ -190,7 +190,41 @@ test('private profiles are owner-only while public profiles are discoverable', a
   await assertFails(getDoc(doc(provider, 'users/employer')));
   await assertSucceeds(getDoc(doc(provider, 'publicProfiles/employer')));
   await assertSucceeds(updateDoc(doc(employer, 'users/employer'), { blockedUserIds: ['other'] }));
+  await assertFails(updateDoc(doc(employer, 'users/employer'), { ratingAvg: 5 }));
+  await assertFails(updateDoc(doc(employer, 'publicProfiles/employer'), { ratingCount: 1 }));
   await assertFails(updateDoc(doc(provider, 'users/employer'), { blockedUserIds: ['other'] }));
+});
+
+test('new accounts must start with an empty server-managed rating summary', async () => {
+  await seed();
+  const newUser = dbFor('new-user');
+  const legitimateSignup = writeBatch(newUser);
+  legitimateSignup.set(doc(newUser, 'users/new-user'), privateUser('employer', 'New Employer'));
+  legitimateSignup.set(doc(newUser, 'publicProfiles/new-user'), publicProfile('employer', 'New Employer'));
+  await assertSucceeds(legitimateSignup.commit());
+
+  const forgedRatings = writeBatch(newUser);
+  const fakeSummary = {
+    ratingAvg: 5,
+    ratingCount: 999,
+    recentReviews: [],
+  };
+  forgedRatings.set(doc(newUser, 'users/forged-user'), privateUser('employer', 'Forged Employer', fakeSummary));
+  forgedRatings.set(doc(newUser, 'publicProfiles/forged-user'), publicProfile('employer', 'Forged Employer', fakeSummary));
+  await assertFails(forgedRatings.commit());
+
+  const forgedReviewList = writeBatch(newUser);
+  const fakeRecentReview = {
+    ratingAvg: 0,
+    ratingCount: 0,
+    recentReviews: [{ fake: true }],
+  };
+  forgedReviewList.set(doc(newUser, 'users/forged-review-user'), privateUser('employer', 'Forged Review Employer', fakeRecentReview));
+  forgedReviewList.set(
+    doc(newUser, 'publicProfiles/forged-review-user'),
+    publicProfile('employer', 'Forged Review Employer', fakeRecentReview),
+  );
+  await assertFails(forgedReviewList.commit());
 });
 
 test('only employers can create jobs and disabled users cannot write', async () => {
@@ -347,6 +381,12 @@ test('only completed-job participants can submit immutable reviews and reports s
     comment: 'Excellent work.',
     createdAtMs: now + 1,
   };
+  await assertFails(
+    setDoc(doc(employer, 'jobs/completed-job/review/employer'), {
+      ...review,
+      privateOrUnexpectedPayload: 'x'.repeat(10_000),
+    }),
+  );
   const reviewBatch = writeBatch(employer);
   reviewBatch.set(doc(employer, 'jobs/completed-job/review/employer'), review);
   reviewBatch.update(doc(employer, 'jobs/completed-job'), { reviewedBy: ['employer'] });

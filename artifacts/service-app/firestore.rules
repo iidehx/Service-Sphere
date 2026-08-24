@@ -108,6 +108,12 @@ service cloud.firestore {
         && data.createdAtMs is number;
     }
 
+    function hasEmptyRatingSummary(data) {
+      return data.ratingAvg == 0
+        && data.ratingCount == 0
+        && data.recentReviews.size() == 0;
+    }
+
     function publicProfileMatchesPrivate(userId) {
       let privateProfile = getAfter(userPath(userId)).data;
       return request.resource.data.name == privateProfile.name
@@ -126,6 +132,8 @@ service cloud.firestore {
         && request.resource.data.createdAtMs == privateProfile.createdAtMs;
     }
 
+    // Rating summaries are maintained by the trusted Firebase Functions trigger
+    // after an immutable review is created. Mobile clients cannot edit them.
     function selfEditableUserFields() {
       return [
         'name', 'workArea', 'categories', 'priceRange', 'companyInfo', 'bio',
@@ -148,6 +156,7 @@ service cloud.firestore {
       allow read: if isSelf(userId) || isAdmin();
       allow create: if isSelf(userId) && isActive()
         && validUserDocument(request.resource.data)
+        && hasEmptyRatingSummary(request.resource.data)
         && request.resource.data.verified == false
         && !request.resource.data.keys().hasAny(['disabled']);
       allow update: if (isSelf(userId) && isActive()
@@ -161,6 +170,7 @@ service cloud.firestore {
       allow read: if signedIn();
       allow create: if isSelf(userId) && isActive()
         && validPublicProfile(request.resource.data)
+        && hasEmptyRatingSummary(request.resource.data)
         && publicProfileMatchesPrivate(userId);
       allow update: if (isSelf(userId) && isActive()
           && validPublicProfile(request.resource.data)
@@ -348,7 +358,17 @@ service cloud.firestore {
         && data.reviewerId == request.auth.uid && data.reviewerName == currentUserName()
         && data.targetUserId == targetUserId
         && data.rating is int && data.rating >= 1 && data.rating <= 5
+        && (!data.keys().hasAny(['communication'])
+          || (data.communication is int && data.communication >= 1 && data.communication <= 5))
+        && (!data.keys().hasAny(['quality'])
+          || (data.quality is int && data.quality >= 1 && data.quality <= 5))
+        && (!data.keys().hasAny(['punctuality'])
+          || (data.punctuality is int && data.punctuality >= 1 && data.punctuality <= 5))
         && data.tags is list && data.tags.size() <= 8
+        && data.tags.hasOnly([
+          'Professional', 'On time', 'Great value', 'Friendly', 'Clean work',
+          'Clear communication', 'Would hire again', 'Went above & beyond'
+        ])
         && data.comment is string && data.comment.size() <= 2000
         && data.createdAtMs is number;
     }

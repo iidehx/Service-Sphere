@@ -56,8 +56,9 @@ Follow these steps once to go live.
   the marketplace. Any signed-in user may read this collection.
 - Jobs, chat membership, messages, notifications, reports, reviews, quotes, payments, and
   lifecycle updates are checked for the correct participant, role, fields, and transition.
-- Rating summaries are **not writable by the mobile client**. Reviews are stored immutably;
-  calculate aggregate rating fields from a trusted server or Cloud Function when one is added.
+- Rating summaries are **not writable by the mobile client**. The deployed Cloud Functions
+  trigger recomputes each recipient's average, count, and five most recent reviews from
+  immutable review documents, then mirrors the same summary to private and public profiles.
 
 ### Existing accounts
 
@@ -92,13 +93,34 @@ so a restart is required for changes to take effect.
 That's it — the auth screen will stop showing the demo accounts and start using real
 Firebase accounts.
 
+## 7. Deploy rating aggregation functions
+
+The repository includes two Firestore create triggers under
+[`functions/`](./functions): one for an employer's provider review and one for a
+provider's employer review. Both run with Firebase Admin privileges after a review is
+created, so they can update the protected `ratingAvg`, `ratingCount`, and
+`recentReviews` fields without granting that permission to mobile clients.
+
+From this folder, deploy the rules and functions:
+
+```bash
+pnpm --filter @workspace/service-app-functions run build
+pnpm exec firebase deploy --only firestore:rules,functions --config firebase.json
+```
+
+The trigger rebuilds the recipient's summary from both review subcollections in a
+transaction. This makes event retries safe: the same review is counted once by its
+stable job/reviewer/recipient identity, not once per trigger delivery.
+
 ## Run the Firestore permission tests
 
 The repository includes an emulator test suite covering allowed and denied operations for
 private profiles, jobs, chats, messages, notifications, reviews, reports, and disabled users.
+It also includes unit tests for the trusted rating-summary aggregation logic.
 
 ```bash
 pnpm --filter @workspace/service-app run test:rules
+pnpm --filter @workspace/service-app-functions run test
 ```
 
 The command starts a local Firestore emulator and does not touch your Firebase project. It
