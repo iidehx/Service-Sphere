@@ -72,8 +72,6 @@ catalogs:
 
 overrides:
   '@esbuild-kit/esm-loader': npm:tsx@^4.21.0
-  image-size: 2.0.2
-  minimatch@10.2.5>brace-expansion: 5.0.9
   '@expo/ngrok-bin>@expo/ngrok-bin-darwin-arm64': '-'
   '@expo/ngrok-bin>@expo/ngrok-bin-darwin-x64': '-'
   '@expo/ngrok-bin>@expo/ngrok-bin-freebsd-ia32': '-'
@@ -130,6 +128,7 @@ overrides:
   lightningcss>lightningcss-linux-x64-musl: '-'
   lightningcss>lightningcss-win32-arm64-msvc: '-'
   lightningcss>lightningcss-win32-x64-msvc: '-'
+  minimatch@10.2.5>brace-expansion: 5.0.9
   rollup>@rollup/rollup-android-arm-eabi: '-'
   rollup>@rollup/rollup-android-arm64: '-'
   rollup>@rollup/rollup-darwin-arm64: '-'
@@ -156,9 +155,9 @@ overrides:
   rollup>@rollup/rollup-win32-x64-msvc: '-'
 
 patchedDependencies:
-  image-size@2.0.2:
-    hash: 4b0d9d6fcd78f120226615af412315cd2423fa2fca12ade677919b0b48216f93
-    path: patches/image-size@2.0.2.patch
+  image-size@1.2.1:
+    hash: faf7c5db55de18663a2a47234e5b0d7b29ca50a8ae2849bedc1d3f70004e93a7
+    path: patches/image-size@1.2.1.patch
 
 importers:
 
@@ -5133,8 +5132,8 @@ packages:
     resolution: {integrity: sha512-BAg6QkE8W+TuQLrrw0Ugr7HegXduRuuj8/ti2kSOc+jz1dmx8/WNcjr6XGnq5YpDWxFwwaavqD0+jIUOKelTsw==}
     engines: {node: '>= 4'}
 
-  image-size@2.0.2:
-    resolution: {integrity: sha512-IRqXKlaXwgSMAMtpNzZa1ZAe8m+Sa1770Dhk8VkSsP9LS+iHD62Zd8FQKs8fbPiagBE7BzoFX23cxFnwshpV6w==}
+  image-size@1.2.1:
+    resolution: {integrity: sha512-rH+46sQJ2dlwfjfhCyNx5thzrv+dtmBIhPHk0zgRUukHzZ/kRueTJXoYYsclBaKcSMBWuGbOFXtioLpzTb5euw==}
     engines: {node: '>=16.x'}
     hasBin: true
 
@@ -6465,6 +6464,9 @@ packages:
 
   queue-microtask@1.2.3:
     resolution: {integrity: sha512-NuaNSa6flKT5JaSYQzJok04JzTL1CA6aGhv5rfLW3PgqA+M2ChpZQnAC8h8i4ZFkBS8X5RqkDBHA7r4hej3K9A==}
+
+  queue@6.0.2:
+    resolution: {integrity: sha512-iHZWu+q3IdFZFX36ro/lKBkSvfkztY5Y7HMiPlOUjhupPcG2JMfst2KKEpu5XndviX/3UhFbRngUPNKtgvtZiA==}
 
   quick-format-unescaped@4.0.4:
     resolution: {integrity: sha512-tYC1Q1hgyRuHgloV/YXs2w15unPVh8qfu/qCTfhTYamaw7fyhumKa2yGpdSo87vY32rIclj+4fWYQXUMs9EHvg==}
@@ -13333,7 +13335,9 @@ snapshots:
 
   ignore@7.0.6: {}
 
-  image-size@2.0.2(patch_hash=4b0d9d6fcd78f120226615af412315cd2423fa2fca12ade677919b0b48216f93): {}
+  image-size@1.2.1(patch_hash=faf7c5db55de18663a2a47234e5b0d7b29ca50a8ae2849bedc1d3f70004e93a7):
+    dependencies:
+      queue: 6.0.2
 
   import-lazy@2.1.0: {}
 
@@ -14133,7 +14137,7 @@ snapshots:
       flow-enums-runtime: 0.0.6
       graceful-fs: 4.2.11
       hermes-parser: 0.32.0
-      image-size: 2.0.2(patch_hash=4b0d9d6fcd78f120226615af412315cd2423fa2fca12ade677919b0b48216f93)
+      image-size: 1.2.1(patch_hash=faf7c5db55de18663a2a47234e5b0d7b29ca50a8ae2849bedc1d3f70004e93a7)
       invariant: 2.2.4
       jest-worker: 29.7.0
       jsc-safe-url: 0.2.4
@@ -14179,7 +14183,7 @@ snapshots:
       flow-enums-runtime: 0.0.6
       graceful-fs: 4.2.11
       hermes-parser: 0.35.0
-      image-size: 2.0.2(patch_hash=4b0d9d6fcd78f120226615af412315cd2423fa2fca12ade677919b0b48216f93)
+      image-size: 1.2.1(patch_hash=faf7c5db55de18663a2a47234e5b0d7b29ca50a8ae2849bedc1d3f70004e93a7)
       invariant: 2.2.4
       jest-worker: 29.7.0
       jsc-safe-url: 0.2.4
@@ -14884,6 +14888,10 @@ snapshots:
       strict-uri-encode: 2.0.0
 
   queue-microtask@1.2.3: {}
+
+  queue@6.0.2:
+    dependencies:
+      inherits: 2.0.4
 
   quick-format-unescaped@4.0.4: {}
 

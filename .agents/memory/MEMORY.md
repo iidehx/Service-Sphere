@@ -1,0 +1,1 @@
+- [Metro image-size compatibility](metro-image-size-compatibility.md) — Expo Metro needs image-size v1 API; apply parser hardening as a v1 patch.
