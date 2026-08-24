@@ -203,7 +203,7 @@ test('private profiles are owner-only while public profiles are discoverable', a
   await assertFails(deleteDoc(doc(provider, 'users/employer')));
 });
 
-test('unverified accounts can provision profiles but cannot write marketplace data', async () => {
+test('unverified accounts can use marketplace data while email verification is disabled', async () => {
   await seed();
   const unverified = dbFor('unverified', { email_verified: false });
   const accountSetup = writeBatch(unverified);
@@ -211,11 +211,11 @@ test('unverified accounts can provision profiles but cannot write marketplace da
   accountSetup.set(doc(unverified, 'publicProfiles/unverified'), publicProfile('employer', 'Unverified Employer'));
   await assertSucceeds(accountSetup.commit());
 
-  await assertFails(setDoc(doc(unverified, 'jobs/unverified-job'), job({
+  await assertSucceeds(setDoc(doc(unverified, 'jobs/unverified-job'), job({
     employerId: 'unverified',
     employerName: 'Unverified Employer',
   })));
-  await assertFails(updateDoc(doc(unverified, 'users/unverified'), { blockedUserIds: ['provider'] }));
+  await assertSucceeds(updateDoc(doc(unverified, 'users/unverified'), { blockedUserIds: ['provider'] }));
 
   await testEnv.withSecurityRulesDisabled(async (context) => {
     const db = context.firestore();
@@ -246,12 +246,12 @@ test('unverified accounts can provision profiles but cannot write marketplace da
     });
   });
 
-  await assertFails(getDocs(collection(unverified, 'jobs')));
-  await assertFails(getDoc(doc(unverified, 'publicProfiles/provider')));
-  await assertFails(getDoc(doc(unverified, 'chats/unverified-chat')));
-  await assertFails(getDocs(collection(unverified, 'chats/unverified-chat/messages')));
-  await assertFails(updateDoc(doc(unverified, 'notifications/unverified-note'), { read: true }));
-  await assertFails(deleteDoc(doc(unverified, 'notifications/unverified-note')));
+  await assertSucceeds(getDocs(collection(unverified, 'jobs')));
+  await assertSucceeds(getDoc(doc(unverified, 'publicProfiles/provider')));
+  await assertSucceeds(getDoc(doc(unverified, 'chats/unverified-chat')));
+  await assertSucceeds(getDocs(collection(unverified, 'chats/unverified-chat/messages')));
+  await assertSucceeds(updateDoc(doc(unverified, 'notifications/unverified-note'), { read: true }));
+  await assertSucceeds(deleteDoc(doc(unverified, 'notifications/unverified-note')));
 });
 
 test('a pending deletion prevents every session from restoring an account profile', async () => {

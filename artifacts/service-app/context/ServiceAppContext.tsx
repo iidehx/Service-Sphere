@@ -308,7 +308,9 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
   // Firebase-mode state
   const [authUid, setAuthUid] = useState<string | null>(null);
   const [fbUser, setFbUser] = useState<SessionUser | null>(null);
-  const [emailVerified, setEmailVerified] = useState(mode === 'demo' || !EMAIL_VERIFICATION_REQUIRED);
+  const [emailVerified, setEmailVerified] = useState<boolean>(
+    mode === 'demo' || !EMAIL_VERIFICATION_REQUIRED,
+  );
   const [hasPasswordAuth, setHasPasswordAuth] = useState(false);
   const [fbJobs, setFbJobs] = useState<Job[]>([]);
   const [fbChats, setFbChats] = useState<Chat[]>([]);

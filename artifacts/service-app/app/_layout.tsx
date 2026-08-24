@@ -17,7 +17,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
 import { ServiceAppContext, ServiceAppProvider, useServiceApp } from '@/context/ServiceAppContext';
-import { getFirebase, isFirebaseConfigured } from '@/lib/firebase';
+import { EMAIL_VERIFICATION_REQUIRED, getFirebase, isFirebaseConfigured } from '@/lib/firebase';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -151,11 +151,11 @@ function RootLayoutNav() {
     // navigator is unmounted instead of leaving an empty tab screen behind.
     if (!user && (isInTabs || isOnVerification)) {
       router.replace('/login');
-    } else if (user && !needsRole && !emailVerified && !isOnVerification) {
+    } else if (user && !needsRole && EMAIL_VERIFICATION_REQUIRED && !emailVerified && !isOnVerification) {
       router.replace('/verify-email');
-    } else if (user && !needsRole && emailVerified && !isInTabs && !isOnLogin) {
+    } else if (user && !needsRole && (!EMAIL_VERIFICATION_REQUIRED || emailVerified) && !isInTabs && !isOnLogin) {
       router.replace('/(tabs)');
-    } else if (user && !needsRole && emailVerified && isOnLogin) {
+    } else if (user && !needsRole && (!EMAIL_VERIFICATION_REQUIRED || emailVerified) && isOnLogin) {
       router.replace('/(tabs)');
     }
   }, [emailVerified, isInTabs, isOnLogin, isOnVerification, needsRole, ready, router, user]);

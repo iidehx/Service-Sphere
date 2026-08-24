@@ -35,7 +35,6 @@ service cloud.firestore {
 
     function isActive() {
       return signedIn()
-        && request.auth.token.email_verified == true
         && !isPendingDeletion(request.auth.uid)
         && (!exists(userPath(request.auth.uid))
           || !get(userPath(request.auth.uid)).data.get('disabled', false));

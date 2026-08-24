@@ -103,13 +103,11 @@ publishing the rules before relying on provider search or starting a new direct 
 
 ### Email verification and account deletion
 
-- New email/password accounts receive Firebase's built-in verification email and cannot use
-  the marketplace until the verification link is opened. The app sends this email immediately
-  after the account profile is created and offers a rate-limited resend action if delivery is
-  delayed.
-- Existing email/password accounts that have not verified their email see the same verification
-  screen after signing in. They can resend the email, then use **I've verified my email** to
-  refresh their status.
+- New email/password accounts can receive Firebase's built-in verification email. Email
+  verification is temporarily disabled in the app while Firebase delivery is being configured,
+  so signed-in users can use the marketplace during this period.
+- The verification screen, resend action, and refresh behavior remain in the code so the
+  requirement can be restored after delivery is confirmed.
 
 ### Verify delivery in the live project
 
