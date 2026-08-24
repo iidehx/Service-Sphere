@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { AppLogo, Card, GhostButton, PrimaryButton, Screen } from '@/components/AppPrimitives';
@@ -19,10 +19,30 @@ export default function VerifyEmailScreen() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [resendAvailableAt, setResendAvailableAt] = useState<number | null>(null);
+  const [resendSeconds, setResendSeconds] = useState(0);
+  const resendInFlight = useRef(false);
 
   useEffect(() => {
     if (emailVerified) router.replace('/(tabs)');
   }, [emailVerified, router]);
+
+  useEffect(() => {
+    if (!resendAvailableAt) {
+      setResendSeconds(0);
+      return;
+    }
+
+    const updateCountdown = () => {
+      const seconds = Math.max(0, Math.ceil((resendAvailableAt - Date.now()) / 1000));
+      setResendSeconds(seconds);
+      if (seconds === 0) setResendAvailableAt(null);
+    };
+
+    updateCountdown();
+    const timer = setInterval(updateCountdown, 1000);
+    return () => clearInterval(timer);
+  }, [resendAvailableAt]);
 
   if (emailVerified) {
     return (
@@ -33,24 +53,31 @@ export default function VerifyEmailScreen() {
   }
 
   const resend = async () => {
+    if (resendInFlight.current || resendSeconds > 0) return;
+    resendInFlight.current = true;
     setBusy(true);
     setError('');
     setMessage('');
     const nextError = await sendVerificationEmail();
     setBusy(false);
-    if (nextError) setError(nextError);
-    else setMessage('Verification email sent. Check your inbox and spam folder.');
+    resendInFlight.current = false;
+    if (nextError) {
+      setError(nextError);
+    } else {
+      setResendAvailableAt(Date.now() + 30_000);
+      setMessage('Verification email sent. Check your inbox and spam folder. You can resend in 30 seconds.');
+    }
   };
 
   const checkAgain = async () => {
     setBusy(true);
     setError('');
     setMessage('');
-    const nextError = await refreshEmailVerification();
+    const result = await refreshEmailVerification();
     setBusy(false);
-    if (nextError) {
-      setError(nextError);
-    } else if (!emailVerified) {
+    if (typeof result === 'string') {
+      setError(result);
+    } else if (!result) {
       setMessage('Your email is not verified yet. Open the link in the email, then check again.');
     }
   };
@@ -72,7 +99,11 @@ export default function VerifyEmailScreen() {
           {error ? <Text style={[styles.feedback, { color: colors.destructive }]}>{error}</Text> : null}
           {message ? <Text style={[styles.feedback, { color: colors.success }]}>{message}</Text> : null}
           <PrimaryButton label="I've verified my email" loading={busy || authBusy} onPress={checkAgain} />
-          <GhostButton label="Resend verification email" onPress={resend} testID="resend-verification" />
+          <GhostButton
+            label={resendSeconds > 0 ? `Resend verification email (${resendSeconds}s)` : 'Resend verification email'}
+            onPress={resend}
+            testID="resend-verification"
+          />
         </Card>
 
         <GhostButton

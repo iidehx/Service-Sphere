@@ -104,7 +104,7 @@ type ServiceAppContextValue = {
   completeRoleSelection: (role: Role) => Promise<string | null>;
   resetPassword: (email: string) => Promise<string | null>;
   sendVerificationEmail: () => Promise<string | null>;
-  refreshEmailVerification: () => Promise<string | null>;
+  refreshEmailVerification: () => Promise<boolean | string>;
   deleteAccount: (password?: string) => Promise<string | null>;
   signOutUser: () => Promise<void>;
   demoSignIn: (role: Role) => Promise<void>;
@@ -240,6 +240,8 @@ function friendlyError(e: any): string {
     return 'Incorrect email or password.';
   if (code.includes('invalid-email')) return 'That email address looks invalid.';
   if (code.includes('weak-password')) return 'Password must be at least 6 characters.';
+  if (code.includes('operation-not-allowed')) return 'Email sign-up is not enabled yet. Please contact the app administrator.';
+  if (code.includes('quota-exceeded')) return 'Email delivery is temporarily unavailable. Please try again later.';
   if (code.includes('too-many-requests')) return 'Too many attempts. Please wait a few minutes and try again.';
   if (code.includes('network-request-failed')) return 'Network error. Check your connection and try again.';
   if (code.includes('permission-denied')) return 'Permission denied. Make sure the Firestore security rules are published.';
@@ -716,7 +718,7 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
   };
 
   const refreshEmailVerification = async () => {
-    if (mode === 'demo') return null;
+    if (mode === 'demo') return true;
     try {
       const { auth } = getFirebase();
       const currentUser = auth.currentUser;
@@ -725,8 +727,9 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
       // Firestore rules read the verified-email claim from the ID token, not
       // the reloaded user object. Refresh it before routing into the app.
       await currentUser.getIdToken(true);
-      setEmailVerified(Boolean(currentUser.emailVerified));
-      return null;
+      const verified = Boolean(currentUser.emailVerified);
+      setEmailVerified(verified);
+      return verified;
     } catch (e) {
       return friendlyError(e);
     }

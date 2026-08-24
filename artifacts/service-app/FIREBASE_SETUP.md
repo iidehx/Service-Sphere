@@ -31,8 +31,14 @@ Follow these steps once to go live.
 
 1. Build → **Authentication** → Get started.
 2. **Sign-in method** tab → enable **Email/Password**.
-3. Open **Templates** → **Email address verification** and customize the sender name,
-   subject, and reply address for Service App. Keep the verification link enabled.
+3. Open **Templates** → **Email address verification** and configure the delivery details:
+   - Fill **Sender name** with `Service App` (or the public name you want recipients to see).
+   - Fill **Reply-to** with a mailbox you monitor, such as your support or owner email.
+     This is where users' replies will go; it is not the Firebase project ID or an unattended
+     no-reply address.
+   - Use a clear subject such as `Verify your Service App email`.
+   - Keep Firebase's verification link placeholder in the message and send a preview/test
+     email from the template editor before saving.
 4. In **Settings** → **Authorized domains**, add every published Service App domain
    where users may open a verification link.
 5. (Optional) Enable **Google**. Then:
@@ -98,10 +104,41 @@ publishing the rules before relying on provider search or starting a new direct 
 ### Email verification and account deletion
 
 - New email/password accounts receive Firebase's built-in verification email and cannot use
-  the marketplace until the verification link is opened.
+  the marketplace until the verification link is opened. The app sends this email immediately
+  after the account profile is created and offers a rate-limited resend action if delivery is
+  delayed.
 - Existing email/password accounts that have not verified their email see the same verification
   screen after signing in. They can resend the email, then use **I've verified my email** to
   refresh their status.
+
+### Verify delivery in the live project
+
+Complete this once for the Firebase project named by `EXPO_PUBLIC_FIREBASE_PROJECT_ID`:
+
+1. In **Authentication → Sign-in method**, confirm **Email/Password** is enabled (not only
+   Google or email-link sign-in).
+2. In **Authentication → Templates → Email address verification**, confirm the sender name,
+   monitored reply-to mailbox, subject, and verification-link placeholder are saved.
+3. In **Authentication → Settings → Authorized domains**, confirm the app's published web
+   domain is listed. Add the Replit development domain too when testing from the preview.
+4. Create a new account in the app with an inbox you can inspect. Confirm the message arrives
+   in Inbox or Spam, the sender and reply-to values are correct, and the link opens Firebase's
+   confirmation page without an expired/invalid-link error.
+5. Return to the app and tap **I've verified my email**. The app must refresh the Firebase
+   user and token, then open the marketplace. If the account remains blocked, sign out and
+   back in once, then check the Firebase Authentication user record's **Email verified**
+   value.
+
+Saving an Authentication email template is a Firebase Console change and does **not** require
+rebuilding or reinstalling the app. Use the current Expo preview or development build for
+this test. Restart the Expo workflow only after changing an `EXPO_PUBLIC_*` Firebase secret.
+An already-installed production build only needs a new build if it does not yet contain the
+current verification-screen code; the template itself is delivered by Firebase immediately.
+
+Firebase's built-in sender is subject to its project email limits. If the template test works
+but a real inbox does not receive the message, check Spam/Junk and the Firebase project
+quota before repeatedly pressing resend; the app intentionally waits 30 seconds between
+successful sends to avoid triggering `auth/too-many-requests`.
 - Deleting a document in Firestore does **not** delete the matching Firebase Authentication
   account, so it does not free the email address for another registration. Use the app's
   **Profile → Delete account** action instead; it removes both Auth and the private/public
@@ -180,6 +217,17 @@ requires Java 21 or newer; the Replit workspace is configured with it already.
 - **Still in demo mode?** All six `EXPO_PUBLIC_FIREBASE_*` secrets must be present, then
   restart the workflow.
 - **`auth/configuration-not-found`**: Email/Password isn't enabled (step 3).
+- **`auth/operation-not-allowed`**: Email/Password is disabled in **Authentication → Sign-in method**.
+- **`auth/quota-exceeded`**: Firebase email delivery is temporarily over quota; wait and check
+  the project's email limits instead of repeatedly resending.
+- **Verification link says it is invalid or expired**: confirm the app domain is in
+  **Authentication → Settings → Authorized domains**, then request a fresh message.
+- **The app says “Verification email sent” but nothing arrives**: that message means Firebase
+  accepted the send request; it does not confirm mailbox delivery. Confirm the displayed
+  address is correct, check Spam/Junk/Promotions, wait a few minutes, and try **Resend
+  verification email** once. Then check the Firebase Authentication user record and project
+  email limits. A blank sender name or reply-to should be filled in as described above, but
+  those fields are server-side template settings and do not require an app rebuild.
 - **Google popup fails on web**: the Replit URL is missing from Authorized JavaScript
   origins (step 3), or third-party cookies are blocked.
 - **`permission-denied` in Firestore**: rules from step 4 weren't published.
