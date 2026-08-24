@@ -52,6 +52,31 @@ Follow these steps once to go live.
    [`firestore.rules`](./firestore.rules) in this folder → **Publish**.
 3. No composite indexes are needed — the app only uses single-field queries.
 
+
+### Publish the active ruleset
+
+The file in this repository is the source of truth. Saving a local copy or using
+Firestore's temporary simulator does not change the live project: the rules must be
+published in the Firebase project that supplies `EXPO_PUBLIC_FIREBASE_PROJECT_ID`.
+
+From this folder, an authenticated Firebase CLI user can publish the rules directly:
+
+```bash
+pnpm exec firebase login
+pnpm exec firebase deploy --project <your-firebase-project-id> \
+  --only firestore:rules --config firebase.json
+```
+
+After publishing, confirm the Firebase Console's Rules page shows a new published
+version. The live job flow requires the published rules to include:
+
+- signed-in users can read `/jobs/{jobId}`;
+- only an active employer can create a job;
+- the job's `employerId`, `employerName`, open status, pending payment status,
+  empty review list, and required fields are validated; and
+- calendar timestamps are accepted as ISO strings, while flexible and legacy
+  schedule labels remain readable during the rollout.
+
 ### What the rules protect
 
 - `/users/{uid}` is private to its owner. It contains the email address, saved jobs/providers,
@@ -158,5 +183,8 @@ requires Java 21 or newer; the Replit workspace is configured with it already.
 - **Google popup fails on web**: the Replit URL is missing from Authorized JavaScript
   origins (step 3), or third-party cookies are blocked.
 - **`permission-denied` in Firestore**: rules from step 4 weren't published.
+- **New employers can sign in but cannot post jobs**: check the live Rules
+  publish history, then publish `firestore.rules` again. The local emulator
+  tests cannot update a Firebase project.
 - **Provider search or direct chat is empty after publishing rules**: the provider needs to
   sign in once so the app can create their public profile document.

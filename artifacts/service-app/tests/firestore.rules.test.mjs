@@ -13,6 +13,9 @@ import {
   doc,
   getDoc,
   getDocs,
+  limit,
+  orderBy,
+  query,
   setDoc,
   updateDoc,
   writeBatch,
@@ -317,6 +320,42 @@ test('only employers can create jobs and disabled users cannot write', async () 
   );
   await assertFails(setDoc(doc(provider, 'jobs/provider-job'), job({ employerId: 'provider', employerName: 'Pat Provider' })));
   await assertFails(setDoc(doc(disabled, 'jobs/disabled-job'), job({ employerId: 'disabled', employerName: 'Disabled Employer' })));
+});
+
+test('a newly registered employer can publish a scheduled job for providers to browse and claim', async () => {
+  const employer = dbFor('new-employer');
+  const provider = dbFor('new-provider');
+  const employerSignup = writeBatch(employer);
+  employerSignup.set(doc(employer, 'users/new-employer'), privateUser('employer', 'New Employer'));
+  employerSignup.set(doc(employer, 'publicProfiles/new-employer'), publicProfile('employer', 'New Employer'));
+  await assertSucceeds(employerSignup.commit());
+
+  const providerSignup = writeBatch(provider);
+  providerSignup.set(doc(provider, 'users/new-provider'), privateUser('provider', 'New Provider'));
+  providerSignup.set(doc(provider, 'publicProfiles/new-provider'), publicProfile('provider', 'New Provider'));
+  await assertSucceeds(providerSignup.commit());
+
+  const liveJob = doc(employer, 'jobs/new-calendar-job');
+  await assertSucceeds(
+    setDoc(
+      liveJob,
+      job({
+        employerId: 'new-employer',
+        employerName: 'New Employer',
+        scheduledAt: '2026-09-15T14:00:00.000Z',
+      }),
+    ),
+  );
+
+  const browseResults = await getDocs(query(collection(provider, 'jobs'), orderBy('createdAtMs', 'desc'), limit(200)));
+  assert.ok(browseResults.docs.some((result) => result.id === 'new-calendar-job'));
+  await assertSucceeds(
+    updateDoc(doc(provider, 'jobs/new-calendar-job'), {
+      employeeId: 'new-provider',
+      employeeName: 'New Provider',
+      status: 'negotiating',
+    }),
+  );
 });
 
 test('providers can claim open work but cannot alter ownership or unrelated job fields', async () => {
