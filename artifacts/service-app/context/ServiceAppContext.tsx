@@ -42,6 +42,7 @@ import {
   ChatMessage,
   DemoDb,
   DEMO_STORAGE_KEY,
+  isValidCoarseLocation,
   Job,
   makeSeedDb,
   NotificationKind,
@@ -71,7 +72,7 @@ export type ProfilePatch = Partial<
 
 export type NewJobInput = Pick<
   Job,
-  'title' | 'category' | 'details' | 'priceOffer' | 'scheduledAt' | 'leaveTimeToEmployee'
+  'title' | 'category' | 'details' | 'priceOffer' | 'scheduledAt' | 'location' | 'leaveTimeToEmployee'
 >;
 
 export type ReviewInput = {
@@ -109,7 +110,11 @@ type ServiceAppContextValue = {
   signOutUser: () => Promise<void>;
   demoSignIn: (role: Role) => Promise<void>;
   // Jobs
-  addJob: (input: NewJobInput) => Promise<string | null>;
+  addJob: (input: NewJobInput) => Promise<{ error?: string; jobId?: string }>;
+  /** Stores the optional precise address in the job's participant-restricted subdocument. */
+  setJobExactAddress: (jobId: string, address: string) => Promise<string | null>;
+  /** Returns null if unset, or if the caller isn't an authorized participant. */
+  getJobExactAddress: (jobId: string) => Promise<string | null>;
   acceptJob: (jobId: string) => Promise<{ chatId?: string; error?: string }>;
   toggleSaved: (jobId: string) => Promise<void>;
   toggleSavedProvider: (providerId: string) => Promise<void>;
@@ -179,6 +184,9 @@ function mapJob(id: string, d: any): Job {
     employeeName: d?.employeeName ?? undefined,
     status: ['open', 'negotiating', 'accepted', 'completed'].includes(d?.status) ? d.status : 'open',
     scheduledAt: d?.scheduledAt ?? '',
+    // Legacy jobs created before this field existed have no location at all —
+    // default to '' so every surface can safely treat it as "not provided".
+    location: typeof d?.location === 'string' ? d.location : '',
     leaveTimeToEmployee: Boolean(d?.leaveTimeToEmployee),
     proposedPrice: typeof d?.proposedPrice === 'number' ? d.proposedPrice : undefined,
     quoteBreakdown: d?.quoteBreakdown ?? undefined,
@@ -349,7 +357,7 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
           try {
             const parsed = JSON.parse(saved) as DemoDb;
             if (parsed && parsed.users && Array.isArray(parsed.jobs)) {
-              setDemoDb(parsed);
+              setDemoDb({ ...parsed, jobPrivateLocations: parsed.jobPrivateLocations ?? {} });
               return;
             }
           } catch {
@@ -818,12 +826,18 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
 
   // ---- Job operations --------------------------------------------------------
   const addJob = async (input: NewJobInput) => {
-    if (!user) return 'Please sign in first.';
-    if (user.role !== 'employer') return 'Only employers can post jobs.';
+    if (!user) return { error: 'Please sign in first.' };
+    if (user.role !== 'employer') return { error: 'Only employers can post jobs.' };
+    if (!isValidCoarseLocation(input.location.trim())) {
+      return { error: 'Location must be a ZIP code or a plain area/neighborhood name — not a street address.' };
+    }
     const payload = {
       ...input,
       title: input.title.trim(),
       details: input.details.trim(),
+      // Only the coarse, public area text is ever stored on the job doc
+      // itself — see the `location` doc comment on the Job type.
+      location: input.location.trim(),
       employerId: user.id,
       employerName: user.name,
       status: 'open' as const,
@@ -834,29 +848,84 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
       createdAtMs: Date.now(),
     };
     if (mode === 'demo') {
-      updateDemo((d) => ({ ...d, jobs: [{ ...payload, id: rid('job') }, ...d.jobs] }));
-      return null;
+      const jobId = rid('job');
+      updateDemo((d) => ({ ...d, jobs: [{ ...payload, id: jobId }, ...d.jobs] }));
+      return { jobId };
     }
     try {
       const { db } = getFirebase();
       const accountSnapshot = await getDoc(doc(db, 'users', user.id));
       if (!accountSnapshot.exists()) {
-        return 'Your Firestore account profile is missing. Create /users/' + user.id + ' with role set to "employer", then sign out and back in.';
+        return { error: 'Your Firestore account profile is missing. Create /users/' + user.id + ' with role set to "employer", then sign out and back in.' };
       }
 
       const account = accountSnapshot.data();
       if (account.disabled === true) {
-        return 'This account has been disabled and cannot post jobs.';
+        return { error: 'This account has been disabled and cannot post jobs.' };
       }
       if (account.role !== 'employer') {
         const storedRole = typeof account.role === 'string' ? `"${account.role}"` : 'missing';
-        return `Your Firestore account role is ${storedRole}. It must be exactly "employer" (lowercase) to post jobs.`;
+        return { error: `Your Firestore account role is ${storedRole}. It must be exactly "employer" (lowercase) to post jobs.` };
       }
 
-      await addDoc(collection(db, 'jobs'), payload);
+      const ref = await addDoc(collection(db, 'jobs'), payload);
+      return { jobId: ref.id };
+    } catch (e) {
+      return { error: friendlyError(e) };
+    }
+  };
+
+  // The exact address (if the employer chooses to provide one beyond the
+  // public coarse `location`) is stored separately so it is never included
+  // in the marketplace-readable job document. Only the employer and the
+  // provider assigned to the job (once one exists) can read it — see
+  // firestore.rules `jobs/{jobId}/private/location`.
+  const setJobExactAddress = async (jobId: string, address: string) => {
+    if (!user) return 'Please sign in first.';
+    const trimmed = address.trim();
+    if (trimmed.length > 200) return 'Keep the exact address under 200 characters.';
+    if (mode === 'demo') {
+      updateDemo((d) => {
+        const next = { ...d.jobPrivateLocations };
+        if (trimmed) next[jobId] = trimmed;
+        else delete next[jobId];
+        return { ...d, jobPrivateLocations: next };
+      });
+      return null;
+    }
+    try {
+      const { db } = getFirebase();
+      if (trimmed) {
+        // Merge so a future `place` (Google Places/geocoding) write on this
+        // same subdocument is never clobbered by an address-only update.
+        await setDoc(doc(db, 'jobs', jobId, 'private', 'location'), { address: trimmed }, { merge: true });
+      } else {
+        // Clearing the field must actually remove the stored address, not
+        // just reset local UI state — otherwise the old value keeps
+        // reading back for the assigned provider after a reload.
+        await setDoc(doc(db, 'jobs', jobId, 'private', 'location'), { address: deleteField() }, { merge: true });
+      }
       return null;
     } catch (e) {
       return friendlyError(e);
+    }
+  };
+
+  const getJobExactAddress = async (jobId: string) => {
+    if (!user) return null;
+    if (mode === 'demo') {
+      return demoDb?.jobPrivateLocations?.[jobId] ?? null;
+    }
+    try {
+      const { db } = getFirebase();
+      const snap = await getDoc(doc(db, 'jobs', jobId, 'private', 'location'));
+      if (!snap.exists()) return null;
+      const address = snap.data()?.address;
+      return typeof address === 'string' ? address : null;
+    } catch {
+      // Most commonly: the caller isn't a participant on this job yet, so
+      // the rules deny the read. Treat that the same as "not set".
+      return null;
     }
   };
 
@@ -1758,6 +1827,8 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
       signOutUser,
       demoSignIn,
       addJob,
+      setJobExactAddress,
+      getJobExactAddress,
       acceptJob,
       toggleSaved,
       toggleSavedProvider,

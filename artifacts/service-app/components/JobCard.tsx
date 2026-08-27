@@ -45,6 +45,15 @@ export function JobCard({ job, showSave = true }: { job: Job; showSave?: boolean
         </Text>
       ) : null}
 
+      {job.location ? (
+        <View style={styles.locationRow}>
+          <Ionicons name="location-outline" size={13} color={colors.mutedForeground} />
+          <Text numberOfLines={1} style={[styles.locationText, { color: colors.mutedForeground }]}>
+            {job.location}
+          </Text>
+        </View>
+      ) : null}
+
       <View style={styles.bottomRow}>
         <View style={styles.priceWrap}>
           <Text style={[styles.price, { color: colors.foreground }]}>${price}</Text>
@@ -76,6 +85,8 @@ const styles = StyleSheet.create({
   title: { fontFamily: 'Inter_700Bold', fontSize: 14.5 },
   meta: { fontFamily: 'Inter_400Regular', fontSize: 12 },
   details: { fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 18 },
+  locationRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  locationText: { fontFamily: 'Inter_400Regular', fontSize: 12, flex: 1 },
   bottomRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   priceWrap: { flexDirection: 'row', alignItems: 'baseline', gap: 4, flex: 1 },
   price: { fontFamily: 'Inter_700Bold', fontSize: 16 },

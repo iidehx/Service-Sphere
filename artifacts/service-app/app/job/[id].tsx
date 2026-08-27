@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -6,6 +6,7 @@ import {
   Avatar,
   Card,
   EmptyState,
+  Field,
   GhostButton,
   HeaderBar,
   KeyValueRow,
@@ -76,12 +77,66 @@ export default function JobDetailScreen() {
     declineQuote,
     updatePayment,
     completeJob,
+    setJobExactAddress,
+    getJobExactAddress,
   } = useServiceApp();
 
   const job = useMemo(() => jobs.find((j) => j.id === id), [jobs, id]);
   const [confirm, setConfirm] = useState<null | 'acceptQuote' | 'complete' | 'paid' | 'refund' | 'acceptJob'>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [exactAddress, setExactAddress] = useState<string | null>(null);
+  const [editingAddress, setEditingAddress] = useState(false);
+  const [addressDraft, setAddressDraft] = useState('');
+  const [addressError, setAddressError] = useState('');
+  const [addressBusy, setAddressBusy] = useState(false);
+
+  const isEmployerOnJob = job?.employerId === user?.id;
+  const isProviderOnJob = job?.employeeId === user?.id;
+  const isParticipant = !!job && !!user && (isEmployerOnJob || isProviderOnJob);
+  // The precise address is only unlocked for the provider once the employer
+  // has actually accepted them (status 'accepted'/'completed') — merely
+  // claiming/negotiating an open job must not reveal it. Mirrors
+  // isPrivateParticipant() in firestore.rules; the employer can always see
+  // and edit it regardless of status.
+  const canAccessExactAddress =
+    !!job && !!user && (isEmployerOnJob || (isProviderOnJob && (job.status === 'accepted' || job.status === 'completed')));
+
+  useEffect(() => {
+    // Only ever fetched for an authorized participant — see
+    // getJobExactAddress / firestore.rules jobs/{jobId}/private/location.
+    if (!job || !canAccessExactAddress) {
+      setExactAddress(null);
+      return;
+    }
+    let cancelled = false;
+    getJobExactAddress(job.id).then((address) => {
+      if (!cancelled) setExactAddress(address);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [job?.id, job?.status, canAccessExactAddress]);
+
+  const startEditingAddress = () => {
+    setAddressDraft(exactAddress ?? '');
+    setAddressError('');
+    setEditingAddress(true);
+  };
+
+  const saveExactAddress = async () => {
+    if (!job) return;
+    setAddressBusy(true);
+    setAddressError('');
+    const err = await setJobExactAddress(job.id, addressDraft.trim());
+    setAddressBusy(false);
+    if (err) {
+      setAddressError(err);
+      return;
+    }
+    setExactAddress(addressDraft.trim() || null);
+    setEditingAddress(false);
+  };
 
   if (!user) return null;
   if (!job) {
@@ -93,9 +148,6 @@ export default function JobDetailScreen() {
     );
   }
 
-  const isEmployerOnJob = job.employerId === user.id;
-  const isProviderOnJob = job.employeeId === user.id;
-  const isParticipant = isEmployerOnJob || isProviderOnJob;
   const statusIndex = job.status === 'open' ? 0 : job.status === 'negotiating' ? 1 : job.status === 'accepted' ? 2 : 3;
   const saved = user.savedJobIds.includes(job.id);
   const chatId = chatIdForJob(job.id);
@@ -176,6 +228,56 @@ export default function JobDetailScreen() {
               </Text>
             </View>
           </View>
+          {job.location ? (
+            <View style={styles.locationRow}>
+              <Ionicons name="location-outline" size={15} color={colors.mutedForeground} />
+              <Text style={[styles.locationText, { color: colors.mutedForeground }]} testID="job-location">
+                {job.location}
+              </Text>
+            </View>
+          ) : null}
+          {canAccessExactAddress && exactAddress && !editingAddress ? (
+            <View style={styles.locationRow}>
+              <Ionicons name="pin-outline" size={15} color={colors.foreground} />
+              <Text style={[styles.locationText, { color: colors.foreground }]} testID="job-exact-address">
+                {exactAddress}
+              </Text>
+            </View>
+          ) : null}
+          {isEmployerOnJob && !editingAddress ? (
+            <Pressable testID="edit-exact-address" onPress={startEditingAddress} style={styles.locationRow}>
+              <Ionicons name="pencil-outline" size={14} color={colors.primary} />
+              <Text style={[styles.locationText, { color: colors.primary }]}>
+                {exactAddress ? 'Edit exact address' : 'Add exact address (private, optional)'}
+              </Text>
+            </Pressable>
+          ) : null}
+          {isEmployerOnJob && editingAddress ? (
+            <View style={{ gap: 4 }}>
+              <Field
+                icon="pin-outline"
+                placeholder="e.g. 1200 Elm St, Austin, TX"
+                value={addressDraft}
+                onChangeText={setAddressDraft}
+                error={addressError}
+                testID="input-edit-exact-address"
+              />
+              <Text style={[styles.hint, { color: colors.mutedForeground }]}>
+                Only shared with you and the accepted provider — never shown on the public listing.
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <GhostButton
+                  testID="cancel-exact-address"
+                  label="Cancel"
+                  onPress={() => {
+                    setEditingAddress(false);
+                    setAddressError('');
+                  }}
+                />
+                <PrimaryButton testID="save-exact-address" label="Save" onPress={saveExactAddress} loading={addressBusy} />
+              </View>
+            </View>
+          ) : null}
           <Text style={[styles.details, { color: colors.mutedForeground }]}>{job.details}</Text>
         </Card>
 
@@ -420,6 +522,9 @@ const styles = StyleSheet.create({
   infoValue: { fontFamily: 'Inter_700Bold', fontSize: 16 },
   infoDivider: { width: 1, alignSelf: 'stretch' },
   details: { fontFamily: 'Inter_400Regular', fontSize: 13.5, lineHeight: 20 },
+  locationRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  locationText: { fontFamily: 'Inter_500Medium', fontSize: 13 },
+  hint: { fontFamily: 'Inter_400Regular', fontSize: 11.5, lineHeight: 16 },
   sectionLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
   sectionLabelStrong: { fontFamily: 'Inter_700Bold', fontSize: 14.5 },
   personRow: { flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 8 },

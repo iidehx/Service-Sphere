@@ -16,6 +16,33 @@ export type QuoteBreakdown = {
   extraFees: number;
 };
 
+/**
+ * Normalized place data a future Google Places/geocoding integration can
+ * attach to a job. Nothing writes this today — the shape exists so that
+ * work can slot in later without a schema migration. Lives only in the
+ * job's private, participant-restricted subdocument (see
+ * `JobPrivateLocation`) since a precise label + coordinate pair is exactly
+ * as sensitive as an exact street address.
+ */
+export type JobLocationPlace = {
+  label: string;
+  lat: number;
+  lng: number;
+};
+
+/**
+ * Precise location data for a job, stored at
+ * `jobs/{jobId}/private/location` — never on the public job document.
+ * Readable only by the employer and the assigned provider (once one
+ * exists). Both fields are optional and independent: an employer may add a
+ * free-text exact address, a future Google Places integration may attach
+ * `place`, or both.
+ */
+export type JobPrivateLocation = {
+  address?: string;
+  place?: JobLocationPlace;
+};
+
 export type Review = {
   id: string;
   jobId: string;
@@ -32,6 +59,18 @@ export type Review = {
   createdAtMs: number;
 };
 
+/**
+ * True for a public, coarse location: either a 5-digit ZIP code, or a plain
+ * area/neighborhood name using only letters, spaces, and hyphens (3-40
+ * chars). Deliberately rejects anything containing digits mixed with
+ * letters, commas, or street-address punctuation, so it cannot hold a
+ * precise street address. Mirrored by `validLocationValue` in
+ * firestore.rules — keep both in sync.
+ */
+export function isValidCoarseLocation(value: string): boolean {
+  return /^[0-9]{5}$/.test(value) || /^[A-Za-z][A-Za-z -]{2,39}$/.test(value);
+}
+
 export type Job = {
   id: string;
   title: string;
@@ -44,6 +83,24 @@ export type Job = {
   employeeName?: string;
   status: JobStatus;
   scheduledAt: string;
+  /**
+   * Public, coarse area text entered by the employer, e.g. "North Austin" or
+   * "78704". Not verified against any mapping service. This is stored on the
+   * job document itself, which every signed-in active user can read while
+   * browsing the marketplace — so it must never contain a precise street
+   * address. Legacy jobs created before this field existed map to ''.
+   *
+   * Validated as either a 5-digit ZIP code or a plain area/neighborhood name
+   * (letters, spaces, hyphens only — no digits mixed with letters, no
+   * commas) so it structurally cannot hold a street address.
+   *
+   * A separate, precise address or place (if the employer chooses to add
+   * one) lives in the job's private `jobs/{jobId}/private/location`
+   * subdocument — see `JobPrivateLocation`, and `setJobExactAddress` /
+   * `getJobExactAddress` in ServiceAppContext. Legacy jobs created before
+   * this field existed map to ''.
+   */
+  location: string;
   leaveTimeToEmployee: boolean;
   proposedPrice?: number;
   quoteBreakdown?: QuoteBreakdown;
@@ -263,6 +320,14 @@ export type DemoDb = {
   notifications: AppNotification[];
   reports: Report[];
   sessionUserId: string | null;
+  /**
+   * Precise addresses keyed by job id, mirroring the Firestore
+   * `jobs/{jobId}/private/location` subdocument. Kept separate from `jobs`
+   * so demo mode matches the same employer/assigned-provider-only exposure
+   * model as the real backend, even though demo mode has no real
+   * per-account security boundary.
+   */
+  jobPrivateLocations: Record<string, string>;
 };
 
 export const DEMO_STORAGE_KEY = '@service-app-state-v2';
@@ -471,6 +536,7 @@ export function makeSeedDb(): DemoDb {
       employerName: 'Taylor Brooks',
       status: 'open',
       scheduledAt: 'Tomorrow · 10:00 AM',
+      location: '78704',
       leaveTimeToEmployee: false,
       paymentStatus: 'pending',
       reviewedBy: [],
@@ -487,6 +553,7 @@ export function makeSeedDb(): DemoDb {
       employerName: 'Alex Morgan',
       status: 'open',
       scheduledAt: 'Sat, Aug 15 · Flexible',
+      location: 'South Congress',
       leaveTimeToEmployee: true,
       paymentStatus: 'pending',
       reviewedBy: [],
@@ -504,6 +571,7 @@ export function makeSeedDb(): DemoDb {
       employeeName: 'Jordan Lee',
       status: 'accepted',
       scheduledAt: 'Tue, Aug 18 · 2:00 PM',
+      location: 'Rainey Street District',
       leaveTimeToEmployee: false,
       proposedPrice: 145,
       quoteBreakdown: { labor: 120, materials: 15, expectedHours: 2, extraFees: 10 },
@@ -606,6 +674,7 @@ export function makeSeedDb(): DemoDb {
     notifications,
     reports: [],
     sessionUserId: null,
+    jobPrivateLocations: {},
   };
 }
 

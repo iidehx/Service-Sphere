@@ -222,15 +222,15 @@ service cloud.firestore {
 
     function validJobCreate() {
       return request.resource.data.keys().hasAll([
-          'title', 'category', 'details', 'priceOffer', 'scheduledAt',
+          'title', 'category', 'details', 'priceOffer', 'scheduledAt', 'location',
           'leaveTimeToEmployee', 'employerId', 'employerName', 'status',
           'paymentStatus', 'employerQuoteAccepted', 'employeeQuoteAccepted',
           'reviewedBy', 'createdAtMs'
         ])
         && request.resource.data.keys().hasOnly([
-          'title', 'category', 'details', 'priceOffer', 'scheduledAt',
-          'leaveTimeToEmployee', 'employerId', 'employerName', 'status',
-          'paymentStatus', 'employerQuoteAccepted', 'employeeQuoteAccepted',
+          'title', 'category', 'details', 'priceOffer', 'scheduledAt', 'location',
+          'leaveTimeToEmployee', 'employerId', 'employerName',
+          'status', 'paymentStatus', 'employerQuoteAccepted', 'employeeQuoteAccepted',
           'reviewedBy', 'createdAtMs'
         ])
         && request.resource.data.title is string
@@ -240,6 +240,7 @@ service cloud.firestore {
         && request.resource.data.details.size() >= 10 && request.resource.data.details.size() <= 5000
         && request.resource.data.priceOffer is number && request.resource.data.priceOffer > 0
         && validScheduleValue(request.resource.data.scheduledAt, request.resource.data.leaveTimeToEmployee)
+        && validLocationValue(request.resource.data.location)
         && request.resource.data.leaveTimeToEmployee is bool
         && request.resource.data.employerId == request.auth.uid
         && request.resource.data.employerName == currentUserName()
@@ -258,6 +259,21 @@ service cloud.firestore {
       return value is string && value.size() >= 3 && value.size() <= 120;
     }
 
+    // Public, coarse area text shown to every active user browsing the
+    // marketplace. Structurally cannot be a street address: it must be
+    // either a bare 5-digit ZIP code, or a plain area/neighborhood name
+    // using only letters, spaces, and hyphens (no digits, no commas, no
+    // street-address punctuation). Never treated as a verified map
+    // location. The more sensitive exact address or place metadata (if any)
+    // lives only in the participant-restricted
+    // `jobs/{jobId}/private/location` subdocument below — see
+    // `validPrivateLocation`. Keep this in sync with
+    // `isValidCoarseLocation` in context/types.ts.
+    function validLocationValue(value) {
+      return value is string
+        && (value.matches('^[0-9]{5}$') || value.matches('^[A-Za-z][A-Za-z -]{2,39}$'));
+    }
+
     function isProviderClaim() {
       return isProvider()
         && resource.data.status == 'open'
@@ -270,12 +286,22 @@ service cloud.firestore {
     }
 
     function isEmployerJobEdit() {
+      // Jobs created before the location field existed have no 'location' key
+      // at all. Allow an edit that leaves that legacy gap untouched, but
+      // require a well-formed value the moment anyone sets or changes it.
       return isJobEmployer()
         && resource.data.status == 'open'
         && request.resource.data.status == 'open'
         && validScheduleValue(request.resource.data.scheduledAt, request.resource.data.leaveTimeToEmployee)
+        && (
+          request.resource.data.get('location', '') == resource.data.get('location', '')
+          || validLocationValue(request.resource.data.get('location', ''))
+        )
         && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['title', 'category', 'details', 'priceOffer', 'scheduledAt', 'leaveTimeToEmployee']);
+             .hasOnly([
+               'title', 'category', 'details', 'priceOffer', 'scheduledAt',
+               'location', 'leaveTimeToEmployee'
+             ]);
     }
 
     function validQuoteProposal() {
@@ -434,6 +460,57 @@ service cloud.firestore {
             get(/databases/$(database)/documents/jobs/$(jobId)).data.employerId
           );
         allow update, delete: if false;
+      }
+
+      // Optional precise address and/or normalized place (label + lat/lng,
+      // for a future Google Places/geocoding integration) the employer may
+      // add on top of the public, coarse `location` field on the job doc
+      // itself. Unlike that field, this subdocument is never covered by the
+      // broad "any active user can read jobs" rule above — only the
+      // employer, and the provider once the employer has actually accepted
+      // them for this job (status 'accepted' or 'completed' — not merely
+      // 'negotiating', which is set as soon as a provider claims an open
+      // job), may read it.
+      match /private/{docId} {
+        function job() {
+          return get(/databases/$(database)/documents/jobs/$(jobId)).data;
+        }
+        function isJobOwner() {
+          return job().employerId == request.auth.uid;
+        }
+        function isPrivateParticipant() {
+          // A provider only becomes a real participant in the precise
+          // address once the employer has actually accepted them — merely
+          // claiming/negotiating an open job (which sets employeeId while
+          // status is still 'negotiating') must not unlock it.
+          return isJobOwner()
+            || (
+              job().get('employeeId', null) == request.auth.uid
+              && (job().status == 'accepted' || job().status == 'completed')
+            );
+        }
+        function validPrivatePlace(data) {
+          return !data.keys().hasAny(['place'])
+            || (
+              data.place is map
+              && data.place.keys().hasOnly(['label', 'lat', 'lng'])
+              && data.place.keys().hasAll(['label', 'lat', 'lng'])
+              && data.place.label is string && data.place.label.size() <= 200
+              && data.place.lat is number && data.place.lat >= -90 && data.place.lat <= 90
+              && data.place.lng is number && data.place.lng >= -180 && data.place.lng <= 180
+            );
+        }
+
+        allow read: if isActive() && isPrivateParticipant();
+        allow create, update: if isActive() && isJobOwner()
+          && docId == 'location'
+          && request.resource.data.keys().hasOnly(['address', 'place'])
+          && (!request.resource.data.keys().hasAny(['address']) || (
+            request.resource.data.address is string
+            && request.resource.data.address.size() >= 3 && request.resource.data.address.size() <= 200
+          ))
+          && validPrivatePlace(request.resource.data);
+        allow delete: if isActive() && isJobOwner();
       }
     }
 

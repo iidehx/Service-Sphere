@@ -10,6 +10,7 @@ import {
   addDoc,
   collection,
   deleteDoc,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -72,6 +73,7 @@ const job = (overrides = {}) => ({
   details: 'Clean the kitchen, bathrooms, floors, and inside the cabinets.',
   priceOffer: 180,
   scheduledAt: '2026-09-01T10:00:00.000Z',
+  location: 'North Austin',
   leaveTimeToEmployee: false,
   employerId: 'employer',
   employerName: 'Emma Employer',
@@ -320,6 +322,152 @@ test('only employers can create jobs and disabled users cannot write', async () 
   );
   await assertFails(setDoc(doc(provider, 'jobs/provider-job'), job({ employerId: 'provider', employerName: 'Pat Provider' })));
   await assertFails(setDoc(doc(disabled, 'jobs/disabled-job'), job({ employerId: 'disabled', employerName: 'Disabled Employer' })));
+});
+
+test('job creation requires a well-formed coarse location and rejects oversized, missing, or address-like values', async () => {
+  await seed();
+  const employer = dbFor('employer');
+  await assertSucceeds(setDoc(doc(employer, 'jobs/located-job'), job({ createdAtMs: now + 1 })));
+  await assertSucceeds(setDoc(doc(employer, 'jobs/zip-job'), job({ location: '78704', createdAtMs: now + 2 })));
+  await assertFails(
+    setDoc(doc(employer, 'jobs/too-short-location'), job({ location: 'NW', createdAtMs: now + 3 })),
+  );
+  await assertFails(
+    setDoc(doc(employer, 'jobs/too-long-location'), job({ location: 'A'.repeat(121), createdAtMs: now + 4 })),
+  );
+  // A full street address is not a valid public, coarse location — the
+  // marketplace-readable job document must never carry one.
+  await assertFails(
+    setDoc(doc(employer, 'jobs/address-location'), job({ location: '1200 Elm St, Austin, TX', createdAtMs: now + 5 })),
+  );
+  await assertFails(
+    setDoc(doc(employer, 'jobs/digits-location'), job({ location: '123 Main', createdAtMs: now + 6 })),
+  );
+  const { location, ...withoutLocation } = job({ createdAtMs: now + 7 });
+  await assertFails(setDoc(doc(employer, 'jobs/missing-location'), withoutLocation));
+});
+
+test('the public job document rejects locationPlace entirely — normalized place metadata only lives in the private subdocument', async () => {
+  await seed();
+  const employer = dbFor('employer');
+  await assertFails(
+    setDoc(
+      doc(employer, 'jobs/place-job'),
+      job({
+        createdAtMs: now + 1,
+        locationPlace: { label: 'North Austin', lat: 30.27, lng: -97.74 },
+      }),
+    ),
+  );
+});
+
+test('the private location subdocument accepts an optional, well-formed place alongside or instead of an address', async () => {
+  await seed();
+  const employer = dbFor('employer');
+  const provider = dbFor('provider');
+
+  await assertSucceeds(
+    setDoc(doc(employer, 'jobs/accepted-job/private/location'), {
+      place: { label: '1200 Elm St, Austin, TX', lat: 30.27, lng: -97.74 },
+    }),
+  );
+  await assertSucceeds(getDoc(doc(provider, 'jobs/accepted-job/private/location')));
+  await assertFails(
+    setDoc(doc(employer, 'jobs/accepted-job/private/location'), {
+      place: { label: 'Somewhere', lat: 999, lng: -97.74 },
+    }),
+  );
+  await assertFails(
+    setDoc(doc(employer, 'jobs/accepted-job/private/location'), {
+      place: { label: 'Somewhere' },
+    }),
+  );
+});
+
+test('a precise address is readable only by the employer and the assigned provider, never by other users', async () => {
+  await seed();
+  const employer = dbFor('employer');
+  const provider = dbFor('provider'); // assigned provider on jobs/accepted-job
+  const other = dbFor('other'); // not a participant on any of these jobs
+  const anon = testEnv.unauthenticatedContext().firestore();
+
+  // The owning employer can write the precise address on their own job...
+  await assertSucceeds(setDoc(doc(employer, 'jobs/accepted-job/private/location'), { address: '1200 Elm St, Austin, TX' }));
+  // ...and both the employer and the assigned provider can read it back.
+  await assertSucceeds(getDoc(doc(employer, 'jobs/accepted-job/private/location')));
+  await assertSucceeds(getDoc(doc(provider, 'jobs/accepted-job/private/location')));
+  // A signed-in user who is not a participant on this job cannot read it.
+  await assertFails(getDoc(doc(other, 'jobs/accepted-job/private/location')));
+  await assertFails(getDoc(doc(anon, 'jobs/accepted-job/private/location')));
+  // A provider cannot write the employer's precise address.
+  await assertFails(setDoc(doc(provider, 'jobs/accepted-job/private/location'), { address: '999 Fake St' }));
+
+  // A provider who has merely claimed/is negotiating an open job (employeeId
+  // is set, but the employer has not yet accepted them — status stays
+  // 'negotiating') must NOT be able to read the precise address yet: only
+  // acceptance ('accepted'/'completed') unlocks it.
+  await assertSucceeds(setDoc(doc(employer, 'jobs/quote-job/private/location'), { address: '55 Negotiating Ln, Austin, TX' }));
+  await assertFails(getDoc(doc(provider, 'jobs/quote-job/private/location')));
+  // Once the same job is accepted, the assigned provider gains read access.
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'jobs/quote-job'), { status: 'accepted' }, { merge: true });
+  });
+  await assertSucceeds(getDoc(doc(provider, 'jobs/quote-job/private/location')));
+
+  // Before a provider is assigned (open-job has no employeeId), only the
+  // employer can read or write the precise address — no one else qualifies
+  // as a participant yet.
+  await assertSucceeds(setDoc(doc(employer, 'jobs/open-job/private/location'), { address: '742 Evergreen Terrace, Austin, TX' }));
+  await assertFails(getDoc(doc(provider, 'jobs/open-job/private/location')));
+  await assertFails(getDoc(doc(other, 'jobs/open-job/private/location')));
+
+  // Oversized or malformed values are rejected.
+  await assertFails(setDoc(doc(employer, 'jobs/open-job/private/location'), { address: 'A'.repeat(201) }));
+  await assertFails(setDoc(doc(employer, 'jobs/open-job/private/location'), { address: 'AB' }));
+  await assertFails(setDoc(doc(employer, 'jobs/open-job/private/location'), { address: '123 Main St', extra: 'nope' }));
+});
+
+test('the owning employer can clear a saved precise address, and it stops being readable afterward', async () => {
+  await seed();
+  const employer = dbFor('employer');
+  const provider = dbFor('provider'); // assigned provider on jobs/accepted-job
+
+  await assertSucceeds(setDoc(doc(employer, 'jobs/accepted-job/private/location'), { address: '1200 Elm St, Austin, TX' }));
+  const before = await getDoc(doc(provider, 'jobs/accepted-job/private/location'));
+  assert.equal(before.data()?.address, '1200 Elm St, Austin, TX');
+
+  // Clearing merges a field-delete for `address`, mirroring what the app
+  // does when an employer blanks out the exact-address editor.
+  await assertSucceeds(setDoc(doc(employer, 'jobs/accepted-job/private/location'), { address: deleteField() }, { merge: true }));
+  const after = await getDoc(doc(provider, 'jobs/accepted-job/private/location'));
+  assert.equal(after.data()?.address, undefined);
+});
+
+test('legacy jobs without a location keep rendering and editing safely until one is set', async () => {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    const { location, ...legacyJob } = job({ employerId: 'employer', employerName: 'Emma Employer' });
+    await setDoc(doc(db, 'jobs/legacy-no-location'), legacyJob);
+  });
+  const employer = dbFor('employer');
+  const provider = dbFor('provider');
+  await assertSucceeds(getDoc(doc(provider, 'jobs/legacy-no-location')));
+  // Editing an unrelated field without touching location is still allowed.
+  await assertSucceeds(updateDoc(doc(employer, 'jobs/legacy-no-location'), { priceOffer: 190 }));
+  // Setting an invalid location on that same legacy job is rejected...
+  await assertFails(updateDoc(doc(employer, 'jobs/legacy-no-location'), { location: 'NW' }));
+  await assertFails(updateDoc(doc(employer, 'jobs/legacy-no-location'), { location: '900 Congress Ave, Austin, TX' }));
+  // ...while a well-formed coarse one is accepted.
+  await assertSucceeds(updateDoc(doc(employer, 'jobs/legacy-no-location'), { location: 'Downtown Austin' }));
+});
+
+test('only the owning employer can edit a job location, and only while it is still open', async () => {
+  await seed();
+  const employer = dbFor('employer');
+  const other = dbFor('other');
+  await assertFails(updateDoc(doc(other, 'jobs/open-job'), { location: 'Downtown Austin' }));
+  await assertFails(updateDoc(doc(employer, 'jobs/accepted-job'), { location: 'Downtown Austin' }));
+  await assertSucceeds(updateDoc(doc(employer, 'jobs/open-job'), { location: 'Downtown Austin' }));
 });
 
 test('a newly registered employer can publish a scheduled job for providers to browse and claim', async () => {

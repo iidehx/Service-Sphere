@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Card, Field, HeaderBar, PrimaryButton, Screen } from '@/components/AppPrimitives';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
-import { CATEGORIES, CATEGORY_ICONS, useServiceApp } from '@/context/ServiceAppContext';
+import { CATEGORIES, CATEGORY_ICONS, isValidCoarseLocation, useServiceApp } from '@/context/ServiceAppContext';
 import { useColors } from '@/hooks/useColors';
 
 const TIME_OPTIONS = [
@@ -38,13 +38,15 @@ export default function PostJobScreen() {
   const colors = useColors();
   const router = useRouter();
   const params = useLocalSearchParams<{ category?: string }>();
-  const { addJob, user } = useServiceApp();
+  const { addJob, setJobExactAddress, user } = useServiceApp();
 
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState<string | null>(
     params.category && (CATEGORIES as readonly string[]).includes(params.category) ? params.category : null,
   );
   const [details, setDetails] = useState('');
+  const [location, setLocation] = useState('');
+  const [exactAddress, setExactAddress] = useState('');
   const [price, setPrice] = useState('');
   const [schedule, setSchedule] = useState<Date | null>(null);
   const [flexible, setFlexible] = useState(false);
@@ -53,33 +55,70 @@ export default function PostJobScreen() {
   const [calendarSelection, setCalendarSelection] = useState(() => defaultScheduleDate());
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  // Set once the job document itself is successfully created. If the
+  // follow-up private-address write then fails, the form stays open so the
+  // employer can retry — but retrying must only re-attempt the address
+  // write, never call addJob again and create a second job.
+  const [createdJobId, setCreatedJobId] = useState<string | null>(null);
 
   const submit = async () => {
     const next: Record<string, string> = {};
     const priceNum = Number(price);
-    if (title.trim().length < 3) next.title = 'Give your job a short, clear title.';
-    if (!category) next.category = 'Pick a category.';
-    if (details.trim().length < 10) next.details = 'Describe the work in a bit more detail.';
-    if (!price || Number.isNaN(priceNum) || priceNum <= 0) next.price = 'Enter your price offer in dollars.';
-    if (!flexible && !schedule) next.schedule = 'Choose a date and time, or let the provider suggest a time.';
-    if (!flexible && schedule && schedule.getTime() <= Date.now()) next.schedule = 'Choose a time in the future.';
+    const trimmedLocation = location.trim();
+    if (!createdJobId) {
+      // The job itself is already saved — only the location/other fields
+      // below still apply the first time through, before addJob succeeds.
+      if (title.trim().length < 3) next.title = 'Give your job a short, clear title.';
+      if (!category) next.category = 'Pick a category.';
+      if (details.trim().length < 10) next.details = 'Describe the work in a bit more detail.';
+      if (trimmedLocation.length < 3) next.location = 'Add a ZIP code or a neighborhood/area name.';
+      else if (trimmedLocation.length > 40) next.location = 'Keep the area name under 40 characters.';
+      else if (!isValidCoarseLocation(trimmedLocation)) {
+        next.location = 'Use a ZIP code (e.g. 78704) or a plain area name (e.g. North Austin) — no street address.';
+      }
+      if (!price || Number.isNaN(priceNum) || priceNum <= 0) next.price = 'Enter your price offer in dollars.';
+      if (!flexible && !schedule) next.schedule = 'Choose a date and time, or let the provider suggest a time.';
+      if (!flexible && schedule && schedule.getTime() <= Date.now()) next.schedule = 'Choose a time in the future.';
+    }
+    if (exactAddress.trim().length > 200) next.exactAddress = 'Keep the exact address under 200 characters.';
+    else if (exactAddress.trim() && exactAddress.trim().length < 3) next.exactAddress = 'Add a full address, or leave this blank.';
     setErrors(next);
     if (Object.keys(next).length) return;
 
     setBusy(true);
-    const err = await addJob({
-      title: title.trim(),
-      category: category as string,
-      details: details.trim(),
-      priceOffer: Math.round(priceNum * 100) / 100,
-      scheduledAt: flexible ? 'Flexible — provider suggests a time' : (schedule as Date).toISOString(),
-      leaveTimeToEmployee: flexible,
-    });
-    setBusy(false);
-    if (err) {
-      setErrors({ form: err });
-      return;
+    let jobId = createdJobId;
+    if (!jobId) {
+      const res = await addJob({
+        title: title.trim(),
+        category: category as string,
+        details: details.trim(),
+        priceOffer: Math.round(priceNum * 100) / 100,
+        scheduledAt: flexible ? 'Flexible — provider suggests a time' : (schedule as Date).toISOString(),
+        location: trimmedLocation,
+        leaveTimeToEmployee: flexible,
+      });
+      if (res.error || !res.jobId) {
+        setBusy(false);
+        setErrors({ form: res.error ?? 'Something went wrong. Please try again.' });
+        return;
+      }
+      jobId = res.jobId;
+      setCreatedJobId(jobId);
     }
+    if (exactAddress.trim()) {
+      const addressError = await setJobExactAddress(jobId, exactAddress.trim());
+      if (addressError) {
+        // The job is already posted (and won't be re-created on retry —
+        // see createdJobId above). Surface this clearly and keep the value
+        // in place so pressing Submit again only retries this write.
+        setBusy(false);
+        setErrors({
+          exactAddress: `Job posted, but the exact address could not be saved (${addressError}). Press Submit to retry, or add it later from the job's details screen.`,
+        });
+        return;
+      }
+    }
+    setBusy(false);
     router.back();
   };
 
@@ -169,6 +208,31 @@ export default function PostJobScreen() {
             multiline
             testID="input-details"
           />
+          <Field
+            label="Location"
+            icon="location-outline"
+            placeholder="e.g. 'North Austin' or '78704'"
+            value={location}
+            onChangeText={setLocation}
+            error={errors.location}
+            testID="input-location"
+          />
+          <Text style={[styles.hint, { color: colors.mutedForeground }]}>
+            A ZIP code or a plain neighborhood/area name only — no house number or street. This is shown to every provider
+            browsing open jobs, so it can never be a full address.
+          </Text>
+          <Field
+            label="Exact address (optional)"
+            icon="pin-outline"
+            placeholder="e.g. 1200 Elm St, Austin, TX"
+            value={exactAddress}
+            onChangeText={setExactAddress}
+            error={errors.exactAddress}
+            testID="input-exact-address"
+          />
+          <Text style={[styles.hint, { color: colors.mutedForeground }]}>
+            Only shared with the provider you accept once the job is underway — never shown on the public listing.
+          </Text>
           <Field
             label="Price offer (USD)"
             icon="cash-outline"
@@ -366,6 +430,7 @@ const styles = StyleSheet.create({
   },
   gridText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
   error: { fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 6 },
+  hint: { fontFamily: 'Inter_400Regular', fontSize: 11.5, lineHeight: 16, marginTop: -6 },
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   switchTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 13.5 },
   switchBody: { fontFamily: 'Inter_400Regular', fontSize: 12 },
