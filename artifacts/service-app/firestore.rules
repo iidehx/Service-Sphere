@@ -422,9 +422,18 @@ service cloud.firestore {
     }
 
     match /jobs/{jobId} {
-      // The marketplace feed intentionally exposes job details to signed-in
-      // providers. It does not include private contact or account fields.
-      allow read: if isActive();
+      // Employer privacy: an employer may only read jobs they own — never
+      // another employer's job, whether via a collection query, a direct
+      // document read, or the job-detail route. Providers may still browse
+      // the open marketplace (any employer's open job) and always keep
+      // access to jobs they are a participant in (claimed/negotiating,
+      // accepted, or completed), regardless of who currently holds it.
+      // Every branch here is structured so a query with a matching `where`
+      // clause (employerId ==, status ==, or employeeId ==) can be proven
+      // safe without fetching unrelated documents — see
+      // ServiceAppContext.tsx for the corresponding client queries.
+      allow read: if isActive()
+        && (isJobEmployer() || (isProvider() && resource.data.status == 'open') || isJobProvider());
       allow create: if isActive() && isEmployer() && validJobCreate();
       allow update: if isActive() && (
         isProviderClaim()

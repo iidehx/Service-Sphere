@@ -450,15 +450,64 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
     return unsub;
   }, [mode, authUid]);
 
-  // ---- Firebase collection subscriptions ----------------------------------
+  // ---- Firebase job subscriptions ------------------------------------------
+  // Employer privacy: which jobs are ever loaded onto the device is scoped by
+  // role, not just filtered in the UI, so the query itself mirrors
+  // firestore.rules `jobs/{jobId}` read access:
+  //   - Employers only ever fetch jobs they own (any status) — never another
+  //     employer's job, including for the job-detail route, since a job not
+  //     in this list simply never reaches local state.
+  //   - Providers fetch the open marketplace plus jobs they are a
+  //     participant in (claimed/negotiating, accepted, or completed),
+  //     merged into one list.
+  useEffect(() => {
+    if (mode !== 'firebase' || !authUid || !fbUser) return;
+    const { db } = getFirebase();
+    const unsubs: Array<() => void> = [];
+
+    if (fbUser.role === 'employer') {
+      unsubs.push(
+        onSnapshot(
+          query(collection(db, 'jobs'), where('employerId', '==', authUid)),
+          (snap) => setFbJobs(snap.docs.map((d) => mapJob(d.id, d.data()))),
+          () => undefined,
+        ),
+      );
+    } else {
+      const openJobs = new Map<string, Job>();
+      const myJobs = new Map<string, Job>();
+      const publish = () => setFbJobs([...openJobs.values(), ...myJobs.values()].filter(
+        (j, i, arr) => arr.findIndex((other) => other.id === j.id) === i,
+      ));
+      unsubs.push(
+        onSnapshot(
+          query(collection(db, 'jobs'), where('status', '==', 'open'), limit(200)),
+          (snap) => {
+            openJobs.clear();
+            snap.docs.forEach((d) => openJobs.set(d.id, mapJob(d.id, d.data())));
+            publish();
+          },
+          () => undefined,
+        ),
+        onSnapshot(
+          query(collection(db, 'jobs'), where('employeeId', '==', authUid)),
+          (snap) => {
+            myJobs.clear();
+            snap.docs.forEach((d) => myJobs.set(d.id, mapJob(d.id, d.data())));
+            publish();
+          },
+          () => undefined,
+        ),
+      );
+    }
+
+    return () => unsubs.forEach((unsub) => unsub());
+  }, [mode, authUid, fbUser?.role]);
+
+  // ---- Firebase chat & notification subscriptions --------------------------
   useEffect(() => {
     if (mode !== 'firebase' || !authUid) return;
     const { db } = getFirebase();
-    const unsubJobs = onSnapshot(
-      query(collection(db, 'jobs'), orderBy('createdAtMs', 'desc'), limit(200)),
-      (snap) => setFbJobs(snap.docs.map((d) => mapJob(d.id, d.data()))),
-      () => undefined,
-    );
     const unsubChats = onSnapshot(
       query(collection(db, 'chats'), where('participants', 'array-contains', authUid)),
       (snap) => setFbChats(snap.docs.map((d) => mapChat(d.id, d.data()))),
@@ -470,7 +519,6 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
       () => undefined,
     );
     return () => {
-      unsubJobs();
       unsubChats();
       unsubNotifs();
     };

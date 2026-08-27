@@ -19,6 +19,7 @@ import {
   query,
   setDoc,
   updateDoc,
+  where,
   writeBatch,
 } from 'firebase/firestore';
 
@@ -95,12 +96,39 @@ async function seed() {
       setDoc(doc(db, 'users/other'), privateUser('provider', 'Other Provider')),
       setDoc(doc(db, 'users/disabled'), privateUser('employer', 'Disabled Employer', { disabled: true })),
       setDoc(doc(db, 'users/admin'), privateUser('employer', 'Ada Admin')),
+      setDoc(doc(db, 'users/other-employer'), privateUser('employer', 'Owen OtherEmployer')),
       setDoc(doc(db, 'publicProfiles/employer'), publicProfile('employer', 'Emma Employer')),
       setDoc(doc(db, 'publicProfiles/provider'), publicProfile('provider', 'Pat Provider')),
       setDoc(doc(db, 'publicProfiles/other'), publicProfile('provider', 'Other Provider')),
       setDoc(doc(db, 'publicProfiles/disabled'), publicProfile('employer', 'Disabled Employer')),
+      setDoc(doc(db, 'publicProfiles/other-employer'), publicProfile('employer', 'Owen OtherEmployer')),
       setDoc(doc(db, 'admins/admin'), { enabled: true }),
       setDoc(doc(db, 'jobs/open-job'), job()),
+      // A second employer's own open and non-open jobs, used to prove the
+      // `employer` user above can never read another employer's jobs, and
+      // that a provider may still browse this employer's open listing while
+      // being denied their non-open one once it's claimed by someone else.
+      setDoc(
+        doc(db, 'jobs/other-employer-open-job'),
+        job({ employerId: 'other-employer', employerName: 'Owen OtherEmployer' }),
+      ),
+      setDoc(
+        doc(db, 'jobs/other-employer-accepted-job'),
+        job({
+          employerId: 'other-employer',
+          employerName: 'Owen OtherEmployer',
+          employeeId: 'other',
+          employeeName: 'Other Provider',
+          status: 'accepted',
+          proposedPrice: 150,
+          quoteBreakdown: { labor: 130, materials: 10, expectedHours: 2, extraFees: 10 },
+          quoteBy: 'other',
+          employerQuoteAccepted: true,
+          employeeQuoteAccepted: true,
+          agreedPrice: 150,
+          platformFee: 7.5,
+        }),
+      ),
       setDoc(
         doc(db, 'jobs/accepted-job'),
         job({
@@ -248,7 +276,7 @@ test('unverified accounts can use marketplace data while email verification is d
     });
   });
 
-  await assertSucceeds(getDocs(collection(unverified, 'jobs')));
+  await assertSucceeds(getDocs(query(collection(unverified, 'jobs'), where('employerId', '==', 'unverified'))));
   await assertSucceeds(getDoc(doc(unverified, 'publicProfiles/provider')));
   await assertSucceeds(getDoc(doc(unverified, 'chats/unverified-chat')));
   await assertSucceeds(getDocs(collection(unverified, 'chats/unverified-chat/messages')));
@@ -507,6 +535,7 @@ test('before/after job photos are visible to any current job participant, but wr
 });
 
 test('legacy jobs without a location keep rendering and editing safely until one is set', async () => {
+  await seed();
   await testEnv.withSecurityRulesDisabled(async (context) => {
     const db = context.firestore();
     const { location, ...legacyJob } = job({ employerId: 'employer', employerName: 'Emma Employer' });
@@ -558,7 +587,7 @@ test('a newly registered employer can publish a scheduled job for providers to b
     ),
   );
 
-  const browseResults = await getDocs(query(collection(provider, 'jobs'), orderBy('createdAtMs', 'desc'), limit(200)));
+  const browseResults = await getDocs(query(collection(provider, 'jobs'), where('status', '==', 'open'), limit(200)));
   assert.ok(browseResults.docs.some((result) => result.id === 'new-calendar-job'));
   await assertSucceeds(
     updateDoc(doc(provider, 'jobs/new-calendar-job'), {
@@ -567,6 +596,66 @@ test('a newly registered employer can publish a scheduled job for providers to b
       status: 'negotiating',
     }),
   );
+});
+
+test('an employer can read only jobs they own — never another employer\'s, by get, query, or a direct job-detail lookup', async () => {
+  await seed();
+  const employer = dbFor('employer');
+
+  // Direct document reads mirror what the job-detail route does when a
+  // user navigates (or deep-links) straight to a job id.
+  await assertSucceeds(getDoc(doc(employer, 'jobs/open-job')));
+  await assertFails(getDoc(doc(employer, 'jobs/other-employer-open-job')));
+  await assertFails(getDoc(doc(employer, 'jobs/other-employer-accepted-job')));
+
+  // An owner-scoped query returns only this employer's jobs...
+  const owned = await getDocs(query(collection(employer, 'jobs'), where('employerId', '==', 'employer')));
+  assert.ok(owned.docs.every((result) => result.data().employerId === 'employer'));
+  assert.ok(owned.docs.some((result) => result.id === 'open-job'));
+  assert.ok(!owned.docs.some((result) => result.id.startsWith('other-employer')));
+
+  // ...while an unconstrained collection query, or one scoped to another
+  // employer's jobs, is rejected outright — the rule cannot prove every
+  // possible result belongs to this employer.
+  await assertFails(getDocs(collection(employer, 'jobs')));
+  await assertFails(getDocs(query(collection(employer, 'jobs'), where('employerId', '==', 'other-employer'))));
+  // Employers do not browse the open marketplace — that access path is
+  // reserved for providers.
+  await assertFails(getDocs(query(collection(employer, 'jobs'), where('status', '==', 'open'))));
+});
+
+test('providers can browse any employer\'s open jobs and keep access to jobs they participate in, but not other non-open jobs', async () => {
+  await seed();
+  const provider = dbFor('provider'); // employeeId on accepted-job, quote-job, completed-job
+
+  // Open jobs are readable regardless of which employer posted them.
+  await assertSucceeds(getDoc(doc(provider, 'jobs/open-job')));
+  await assertSucceeds(getDoc(doc(provider, 'jobs/other-employer-open-job')));
+
+  // Jobs this provider is a participant in stay readable at every stage.
+  await assertSucceeds(getDoc(doc(provider, 'jobs/quote-job'))); // negotiating
+  await assertSucceeds(getDoc(doc(provider, 'jobs/accepted-job'))); // accepted
+  await assertSucceeds(getDoc(doc(provider, 'jobs/completed-job'))); // completed
+
+  // A non-open job assigned to a different provider is off-limits — this is
+  // exactly the "unauthorized deep-link read" case: the job exists, but this
+  // provider is neither its employer nor its assigned provider.
+  await assertFails(getDoc(doc(provider, 'jobs/other-employer-accepted-job')));
+
+  // The marketplace browse query returns open jobs across every employer...
+  const browse = await getDocs(query(collection(provider, 'jobs'), where('status', '==', 'open')));
+  assert.ok(browse.docs.some((result) => result.id === 'open-job'));
+  assert.ok(browse.docs.some((result) => result.id === 'other-employer-open-job'));
+  assert.ok(!browse.docs.some((result) => result.id === 'other-employer-accepted-job'));
+
+  // ...and the "my work" query returns only jobs this provider is assigned to.
+  const mine = await getDocs(query(collection(provider, 'jobs'), where('employeeId', '==', 'provider')));
+  assert.ok(mine.docs.every((result) => result.data().employeeId === 'provider'));
+  assert.ok(!mine.docs.some((result) => result.id === 'other-employer-accepted-job'));
+
+  // An unconstrained collection query is still rejected — it could return
+  // another employer's non-open job that this provider has no claim to.
+  await assertFails(getDocs(collection(provider, 'jobs')));
 });
 
 test('providers can claim open work but cannot alter ownership or unrelated job fields', async () => {
