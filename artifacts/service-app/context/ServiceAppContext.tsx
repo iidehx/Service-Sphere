@@ -42,9 +42,12 @@ import {
   ChatMessage,
   DemoDb,
   DEMO_STORAGE_KEY,
+  EMPTY_JOB_PHOTOS,
   isValidCoarseLocation,
   Job,
+  JobPhotos,
   makeSeedDb,
+  MAX_JOB_PHOTOS,
   NotificationKind,
   PLATFORM_FEE_RATE,
   PublicProfile,
@@ -115,6 +118,12 @@ type ServiceAppContextValue = {
   setJobExactAddress: (jobId: string, address: string) => Promise<string | null>;
   /** Returns null if unset, or if the caller isn't an authorized participant. */
   getJobExactAddress: (jobId: string) => Promise<string | null>;
+  /** Returns empty photo lists if none are set, or if the caller isn't an authorized participant. */
+  getJobPhotos: (jobId: string) => Promise<JobPhotos>;
+  /** Employer-only: uploads and appends "before" photos, capped at MAX_JOB_PHOTOS. */
+  addBeforePhotos: (jobId: string, localUris: string[]) => Promise<string | null>;
+  /** Assigned-provider-only, once accepted: uploads and appends "after" photos, capped at MAX_JOB_PHOTOS. */
+  addAfterPhotos: (jobId: string, localUris: string[]) => Promise<string | null>;
   acceptJob: (jobId: string) => Promise<{ chatId?: string; error?: string }>;
   toggleSaved: (jobId: string) => Promise<void>;
   toggleSavedProvider: (providerId: string) => Promise<void>;
@@ -926,6 +935,101 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
       // Most commonly: the caller isn't a participant on this job yet, so
       // the rules deny the read. Treat that the same as "not set".
       return null;
+    }
+  };
+
+  const getJobPhotos = async (jobId: string): Promise<JobPhotos> => {
+    if (!user) return EMPTY_JOB_PHOTOS;
+    if (mode === 'demo') {
+      return demoDb?.jobPhotos?.[jobId] ?? EMPTY_JOB_PHOTOS;
+    }
+    try {
+      const { db } = getFirebase();
+      const snap = await getDoc(doc(db, 'jobs', jobId, 'private', 'photos'));
+      if (!snap.exists()) return EMPTY_JOB_PHOTOS;
+      const data = snap.data();
+      const before = Array.isArray(data?.beforePhotoUrls) ? data.beforePhotoUrls.filter((u: unknown) => typeof u === 'string') : [];
+      const after = Array.isArray(data?.afterPhotoUrls) ? data.afterPhotoUrls.filter((u: unknown) => typeof u === 'string') : [];
+      return { beforePhotoUrls: before, afterPhotoUrls: after };
+    } catch {
+      // Most commonly: the caller isn't a participant on this job, so the
+      // rules deny the read. Treat that the same as "no photos".
+      return EMPTY_JOB_PHOTOS;
+    }
+  };
+
+  // Uploads each local file to Storage under a job- and kind-scoped path
+  // (mirrors saveAvatar's pattern) and returns the resulting download URLs.
+  const uploadJobPhotos = async (jobId: string, kind: 'before' | 'after', localUris: string[]): Promise<string[]> => {
+    const { storage } = getFirebase();
+    const urls: string[] = [];
+    for (const uri of localUris) {
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      const fileRef = storageRef(storage, `jobPhotos/${jobId}/${kind}/${user!.id}-${Date.now()}-${urls.length}.jpg`);
+      await uploadBytes(fileRef, blob);
+      urls.push(await getDownloadURL(fileRef));
+    }
+    return urls;
+  };
+
+  // Employer-only: attaches "before" photos showing the work that needs to
+  // be done. Appends to any existing set (capped at MAX_JOB_PHOTOS) rather
+  // than replacing it, so re-adding photos after the first save doesn't
+  // silently drop earlier ones.
+  const addBeforePhotos = async (jobId: string, localUris: string[]): Promise<string | null> => {
+    if (!user) return 'Please sign in first.';
+    if (localUris.length === 0) return null;
+    if (mode === 'demo') {
+      updateDemo((d) => {
+        const existing = d.jobPhotos[jobId] ?? EMPTY_JOB_PHOTOS;
+        const beforePhotoUrls = [...existing.beforePhotoUrls, ...localUris].slice(0, MAX_JOB_PHOTOS);
+        return { ...d, jobPhotos: { ...d.jobPhotos, [jobId]: { ...existing, beforePhotoUrls } } };
+      });
+      return null;
+    }
+    try {
+      const existing = await getJobPhotos(jobId);
+      if (existing.beforePhotoUrls.length >= MAX_JOB_PHOTOS) return `You can attach up to ${MAX_JOB_PHOTOS} before photos.`;
+      const room = MAX_JOB_PHOTOS - existing.beforePhotoUrls.length;
+      const uploaded = await uploadJobPhotos(jobId, 'before', localUris.slice(0, room));
+      const { db } = getFirebase();
+      const beforePhotoUrls = [...existing.beforePhotoUrls, ...uploaded];
+      await setDoc(doc(db, 'jobs', jobId, 'private', 'photos'), { beforePhotoUrls }, { merge: true });
+      return null;
+    } catch (e) {
+      return friendlyError(e);
+    }
+  };
+
+  // Assigned-provider-only, once the employer has accepted them: attaches
+  // "after" photos showing the finished result.
+  const addAfterPhotos = async (jobId: string, localUris: string[]): Promise<string | null> => {
+    if (!user) return 'Please sign in first.';
+    if (localUris.length === 0) return null;
+    const job = jobs.find((j) => j.id === jobId);
+    if (!job) return 'This job no longer exists.';
+    if (job.employeeId !== user.id) return 'Only the assigned provider can add completion photos.';
+    if (job.status !== 'accepted' && job.status !== 'completed') return 'Completion photos can be added once the job is accepted.';
+    if (mode === 'demo') {
+      updateDemo((d) => {
+        const existing = d.jobPhotos[jobId] ?? EMPTY_JOB_PHOTOS;
+        const afterPhotoUrls = [...existing.afterPhotoUrls, ...localUris].slice(0, MAX_JOB_PHOTOS);
+        return { ...d, jobPhotos: { ...d.jobPhotos, [jobId]: { ...existing, afterPhotoUrls } } };
+      });
+      return null;
+    }
+    try {
+      const existing = await getJobPhotos(jobId);
+      if (existing.afterPhotoUrls.length >= MAX_JOB_PHOTOS) return `You can attach up to ${MAX_JOB_PHOTOS} after photos.`;
+      const room = MAX_JOB_PHOTOS - existing.afterPhotoUrls.length;
+      const uploaded = await uploadJobPhotos(jobId, 'after', localUris.slice(0, room));
+      const { db } = getFirebase();
+      const afterPhotoUrls = [...existing.afterPhotoUrls, ...uploaded];
+      await setDoc(doc(db, 'jobs', jobId, 'private', 'photos'), { afterPhotoUrls }, { merge: true });
+      return null;
+    } catch (e) {
+      return friendlyError(e);
     }
   };
 
@@ -1829,6 +1933,9 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
       addJob,
       setJobExactAddress,
       getJobExactAddress,
+      getJobPhotos,
+      addBeforePhotos,
+      addAfterPhotos,
       acceptJob,
       toggleSaved,
       toggleSavedProvider,

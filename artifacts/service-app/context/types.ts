@@ -43,6 +43,25 @@ export type JobPrivateLocation = {
   place?: JobLocationPlace;
 };
 
+/**
+ * Before/after job photo URLs, stored at `jobs/{jobId}/private/photos` —
+ * never on the public job document, since browsing providers who haven't
+ * been assigned to a job should not see photos of someone's home. Readable
+ * only by the employer and the job's assigned provider (see
+ * `isJobParticipant` in firestore.rules). The employer may add "before"
+ * photos when posting or later editing a job; the assigned provider may add
+ * "after" photos once the job has been accepted.
+ */
+export type JobPhotos = {
+  beforePhotoUrls: string[];
+  afterPhotoUrls: string[];
+};
+
+export const EMPTY_JOB_PHOTOS: JobPhotos = { beforePhotoUrls: [], afterPhotoUrls: [] };
+
+/** Cap on how many photos can be attached per before/after set. */
+export const MAX_JOB_PHOTOS = 6;
+
 export type Review = {
   id: string;
   jobId: string;
@@ -328,6 +347,14 @@ export type DemoDb = {
    * per-account security boundary.
    */
   jobPrivateLocations: Record<string, string>;
+  /**
+   * Before/after job photo URLs keyed by job id, mirroring the Firestore
+   * `jobs/{jobId}/private/photos` subdocument. Kept separate from `jobs` so
+   * demo mode matches the same employer/assigned-provider-only exposure
+   * model as the real backend, even though demo mode has no real
+   * per-account security boundary.
+   */
+  jobPhotos: Record<string, JobPhotos>;
 };
 
 export const DEMO_STORAGE_KEY = '@service-app-state-v2';
@@ -675,6 +702,7 @@ export function makeSeedDb(): DemoDb {
     reports: [],
     sessionUserId: null,
     jobPrivateLocations: {},
+    jobPhotos: {},
   };
 }
 

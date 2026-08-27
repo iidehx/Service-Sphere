@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { Modal, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Card, Field, HeaderBar, PrimaryButton, Screen } from '@/components/AppPrimitives';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
-import { CATEGORIES, CATEGORY_ICONS, isValidCoarseLocation, useServiceApp } from '@/context/ServiceAppContext';
+import { CATEGORIES, CATEGORY_ICONS, isValidCoarseLocation, MAX_JOB_PHOTOS, useServiceApp } from '@/context/ServiceAppContext';
 import { useColors } from '@/hooks/useColors';
 
 const TIME_OPTIONS = [
@@ -38,7 +40,7 @@ export default function PostJobScreen() {
   const colors = useColors();
   const router = useRouter();
   const params = useLocalSearchParams<{ category?: string }>();
-  const { addJob, setJobExactAddress, user } = useServiceApp();
+  const { addJob, setJobExactAddress, addBeforePhotos, user } = useServiceApp();
 
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState<string | null>(
@@ -48,6 +50,8 @@ export default function PostJobScreen() {
   const [location, setLocation] = useState('');
   const [exactAddress, setExactAddress] = useState('');
   const [price, setPrice] = useState('');
+  const [beforePhotos, setBeforePhotos] = useState<string[]>([]);
+  const [photoBusy, setPhotoBusy] = useState(false);
   const [schedule, setSchedule] = useState<Date | null>(null);
   const [flexible, setFlexible] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -60,6 +64,24 @@ export default function PostJobScreen() {
   // employer can retry — but retrying must only re-attempt the address
   // write, never call addJob again and create a second job.
   const [createdJobId, setCreatedJobId] = useState<string | null>(null);
+  // Mirrors createdJobId: once the before photos upload succeeds, retrying
+  // Submit (e.g. after an address-save failure) must not re-upload them.
+  const [photosSaved, setPhotosSaved] = useState(false);
+
+  const pickBeforePhotos = async () => {
+    const room = MAX_JOB_PHOTOS - beforePhotos.length;
+    if (room <= 0) return;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsMultipleSelection: true,
+      selectionLimit: room,
+      quality: 0.7,
+    });
+    if (result.canceled || !result.assets?.length) return;
+    setBeforePhotos((prev) => [...prev, ...result.assets.map((a) => a.uri)].slice(0, MAX_JOB_PHOTOS));
+  };
+
+  const removeBeforePhoto = (uri: string) => setBeforePhotos((prev) => prev.filter((u) => u !== uri));
 
   const submit = async () => {
     const next: Record<string, string> = {};
@@ -117,6 +139,15 @@ export default function PostJobScreen() {
         });
         return;
       }
+    }
+    if (beforePhotos.length && !photosSaved) {
+      const photosError = await addBeforePhotos(jobId, beforePhotos);
+      if (photosError) {
+        setBusy(false);
+        setErrors({ form: `Job posted, but the photos could not be uploaded (${photosError}). Press Submit to retry.` });
+        return;
+      }
+      setPhotosSaved(true);
     }
     setBusy(false);
     router.back();
@@ -233,6 +264,39 @@ export default function PostJobScreen() {
           <Text style={[styles.hint, { color: colors.mutedForeground }]}>
             Only shared with the provider you accept once the job is underway — never shown on the public listing.
           </Text>
+
+          <View style={{ gap: 8 }}>
+            <Text style={[styles.label, { color: colors.mutedForeground, marginBottom: 0 }]}>Before photos (optional)</Text>
+            <View style={styles.photoRow}>
+              {beforePhotos.map((uri) => (
+                <View key={uri} style={styles.photoThumbWrap}>
+                  <Image source={{ uri }} style={styles.photoThumb} contentFit="cover" />
+                  <Pressable
+                    testID={`remove-before-photo-${uri}`}
+                    onPress={() => removeBeforePhoto(uri)}
+                    hitSlop={8}
+                    style={[styles.photoRemove, { backgroundColor: colors.destructive }]}
+                  >
+                    <Ionicons name="close" size={12} color="#fff" />
+                  </Pressable>
+                </View>
+              ))}
+              {beforePhotos.length < MAX_JOB_PHOTOS ? (
+                <Pressable
+                  testID="pick-before-photos"
+                  onPress={pickBeforePhotos}
+                  style={[styles.addPhotoButton, { borderColor: colors.border, backgroundColor: colors.card }]}
+                >
+                  <Ionicons name="camera-outline" size={20} color={colors.mutedForeground} />
+                </Pressable>
+              ) : null}
+            </View>
+            <Text style={[styles.hint, { color: colors.mutedForeground }]}>
+              Show the provider what needs to be done. Only visible to you and the provider working this job — never shown
+              on the public listing.
+            </Text>
+          </View>
+
           <Field
             label="Price offer (USD)"
             icon="cash-outline"
@@ -418,6 +482,28 @@ export default function PostJobScreen() {
 const styles = StyleSheet.create({
   scroll: { padding: 18, paddingBottom: 60, maxWidth: 640, width: '100%', alignSelf: 'center' },
   label: { fontFamily: 'Inter_600SemiBold', fontSize: 12, marginBottom: 9 },
+  photoRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  photoThumbWrap: { position: 'relative' },
+  photoThumb: { width: 64, height: 64, borderRadius: 10 },
+  photoRemove: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addPhotoButton: {
+    width: 64,
+    height: 64,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   gridItem: {
     flexDirection: 'row',

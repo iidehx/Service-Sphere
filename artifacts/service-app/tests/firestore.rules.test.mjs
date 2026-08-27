@@ -443,6 +443,69 @@ test('the owning employer can clear a saved precise address, and it stops being 
   assert.equal(after.data()?.address, undefined);
 });
 
+test('before/after job photos are visible to any current job participant, but writable only by the matching side', async () => {
+  await seed();
+  const employer = dbFor('employer');
+  const provider = dbFor('provider'); // assigned provider on jobs/accepted-job and jobs/quote-job
+  const other = dbFor('other'); // not a participant on any of these jobs
+  const anon = testEnv.unauthenticatedContext().firestore();
+
+  // The employer can attach "before" photos to their own job...
+  await assertSucceeds(
+    setDoc(doc(employer, 'jobs/accepted-job/private/photos'), { beforePhotoUrls: ['https://example.test/before-1.jpg'] }),
+  );
+  // ...and both the employer and the assigned (accepted) provider can read them.
+  await assertSucceeds(getDoc(doc(employer, 'jobs/accepted-job/private/photos')));
+  await assertSucceeds(getDoc(doc(provider, 'jobs/accepted-job/private/photos')));
+  // A non-participant, and an anonymous caller, cannot.
+  await assertFails(getDoc(doc(other, 'jobs/accepted-job/private/photos')));
+  await assertFails(getDoc(doc(anon, 'jobs/accepted-job/private/photos')));
+
+  // Unlike the precise address, photos are visible to a provider who has
+  // merely claimed/is negotiating an open job (employeeId set, status still
+  // 'negotiating') — no acceptance is required to view them.
+  await assertSucceeds(
+    setDoc(doc(employer, 'jobs/quote-job/private/photos'), { beforePhotoUrls: ['https://example.test/before-2.jpg'] }),
+  );
+  await assertSucceeds(getDoc(doc(provider, 'jobs/quote-job/private/photos')));
+
+  // The assigned provider may add "after" photos once accepted...
+  await assertSucceeds(
+    setDoc(doc(provider, 'jobs/accepted-job/private/photos'), { afterPhotoUrls: ['https://example.test/after-1.jpg'] }, { merge: true }),
+  );
+  const merged = await getDoc(doc(employer, 'jobs/accepted-job/private/photos'));
+  assert.deepEqual(merged.data()?.beforePhotoUrls, ['https://example.test/before-1.jpg']);
+  assert.deepEqual(merged.data()?.afterPhotoUrls, ['https://example.test/after-1.jpg']);
+
+  // ...but not before being accepted — merely negotiating isn't enough.
+  await assertFails(
+    setDoc(doc(provider, 'jobs/quote-job/private/photos'), { afterPhotoUrls: ['https://example.test/after-2.jpg'] }, { merge: true }),
+  );
+
+  // Neither side can write into the other's field.
+  await assertFails(
+    setDoc(doc(employer, 'jobs/accepted-job/private/photos'), { afterPhotoUrls: ['https://example.test/sneaky.jpg'] }, { merge: true }),
+  );
+  await assertFails(
+    setDoc(doc(provider, 'jobs/accepted-job/private/photos'), { beforePhotoUrls: ['https://example.test/sneaky.jpg'] }, { merge: true }),
+  );
+  // A non-participant cannot write either field.
+  await assertFails(
+    setDoc(doc(other, 'jobs/accepted-job/private/photos'), { beforePhotoUrls: ['https://example.test/sneaky.jpg'] }, { merge: true }),
+  );
+
+  // The list is capped and must actually be a list of values.
+  await assertFails(
+    setDoc(doc(employer, 'jobs/open-job/private/photos'), {
+      beforePhotoUrls: Array.from({ length: 7 }, (_, i) => `https://example.test/${i}.jpg`),
+    }),
+  );
+  await assertFails(setDoc(doc(employer, 'jobs/open-job/private/photos'), { beforePhotoUrls: 'not-a-list' }));
+  await assertFails(
+    setDoc(doc(employer, 'jobs/open-job/private/photos'), { beforePhotoUrls: [], extra: 'nope' }),
+  );
+});
+
 test('legacy jobs without a location keep rendering and editing safely until one is set', async () => {
   await testEnv.withSecurityRulesDisabled(async (context) => {
     const db = context.firestore();

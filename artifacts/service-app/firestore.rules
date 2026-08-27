@@ -501,7 +501,31 @@ service cloud.firestore {
             );
         }
 
-        allow read: if isActive() && isPrivateParticipant();
+        // Before/after job photos are less sensitive than a precise street
+        // address, so — unlike isPrivateParticipant() above — any current
+        // job participant may view them, including a provider who has only
+        // claimed/is negotiating an open job. Only the assigned provider may
+        // add "after" photos, and only once the employer has actually
+        // accepted them (status 'accepted'/'completed'), mirroring the same
+        // acceptance gate used for the precise address.
+        function isPhotosParticipant() {
+          return isJobOwner() || job().get('employeeId', null) == request.auth.uid;
+        }
+        function isAssignedProvider() {
+          return job().get('employeeId', null) == request.auth.uid
+            && (job().status == 'accepted' || job().status == 'completed');
+        }
+        function validPhotosKeys() {
+          return request.resource.data.keys().hasOnly(['beforePhotoUrls', 'afterPhotoUrls']);
+        }
+        function validPhotoUrlList(list) {
+          return list is list && list.size() <= 6;
+        }
+
+        allow read: if isActive() && (
+          (docId == 'photos' && isPhotosParticipant())
+          || isPrivateParticipant()
+        );
         allow create, update: if isActive() && isJobOwner()
           && docId == 'location'
           && request.resource.data.keys().hasOnly(['address', 'place'])
@@ -510,6 +534,29 @@ service cloud.firestore {
             && request.resource.data.address.size() >= 3 && request.resource.data.address.size() <= 200
           ))
           && validPrivatePlace(request.resource.data);
+
+        // The employer may create/update the "before" photo list at any
+        // time on their own job. Only the assigned, accepted provider may
+        // create/update the "after" photo list. Each write may only ever
+        // touch its own field — the merged document can hold both lists,
+        // but neither side can clobber the other's.
+        allow create: if isActive() && docId == 'photos' && validPhotosKeys()
+          && isJobOwner()
+          && request.resource.data.keys().hasOnly(['beforePhotoUrls'])
+          && validPhotoUrlList(request.resource.data.beforePhotoUrls);
+        allow create: if isActive() && docId == 'photos' && validPhotosKeys()
+          && isAssignedProvider()
+          && request.resource.data.keys().hasOnly(['afterPhotoUrls'])
+          && validPhotoUrlList(request.resource.data.afterPhotoUrls);
+        allow update: if isActive() && docId == 'photos' && validPhotosKeys()
+          && isJobOwner()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['beforePhotoUrls'])
+          && validPhotoUrlList(request.resource.data.get('beforePhotoUrls', []));
+        allow update: if isActive() && docId == 'photos' && validPhotosKeys()
+          && isAssignedProvider()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['afterPhotoUrls'])
+          && validPhotoUrlList(request.resource.data.get('afterPhotoUrls', []));
+
         allow delete: if isActive() && isJobOwner();
       }
     }

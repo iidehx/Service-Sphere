@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   Avatar,
@@ -19,13 +21,27 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import {
   CATEGORY_ICONS,
   chatIdForJob,
+  EMPTY_JOB_PHOTOS,
   formatScheduledAt,
+  JobPhotos,
+  MAX_JOB_PHOTOS,
   PLATFORM_FEE_RATE,
   round2,
   timeAgo,
   useServiceApp,
 } from '@/context/ServiceAppContext';
 import { useColors } from '@/hooks/useColors';
+
+function PhotoStrip({ uris }: { uris: string[] }) {
+  if (!uris.length) return null;
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+      {uris.map((uri) => (
+        <Image key={uri} source={{ uri }} style={styles.photoThumb} contentFit="cover" />
+      ))}
+    </ScrollView>
+  );
+}
 
 const STEPS = ['Posted', 'Accepted', 'Quote agreed', 'Completed'];
 
@@ -79,6 +95,8 @@ export default function JobDetailScreen() {
     completeJob,
     setJobExactAddress,
     getJobExactAddress,
+    getJobPhotos,
+    addAfterPhotos,
   } = useServiceApp();
 
   const job = useMemo(() => jobs.find((j) => j.id === id), [jobs, id]);
@@ -90,10 +108,14 @@ export default function JobDetailScreen() {
   const [addressDraft, setAddressDraft] = useState('');
   const [addressError, setAddressError] = useState('');
   const [addressBusy, setAddressBusy] = useState(false);
+  const [photos, setPhotos] = useState<JobPhotos>(EMPTY_JOB_PHOTOS);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoError, setPhotoError] = useState('');
 
   const isEmployerOnJob = job?.employerId === user?.id;
   const isProviderOnJob = job?.employeeId === user?.id;
   const isParticipant = !!job && !!user && (isEmployerOnJob || isProviderOnJob);
+  const canAddAfterPhotos = isProviderOnJob && (job?.status === 'accepted' || job?.status === 'completed');
   // The precise address is only unlocked for the provider once the employer
   // has actually accepted them (status 'accepted'/'completed') — merely
   // claiming/negotiating an open job must not reveal it. Mirrors
@@ -117,6 +139,46 @@ export default function JobDetailScreen() {
       cancelled = true;
     };
   }, [job?.id, job?.status, canAccessExactAddress]);
+
+  useEffect(() => {
+    // Before/after photos are only ever fetched for a job participant — see
+    // getJobPhotos / firestore.rules jobs/{jobId}/private/photos.
+    if (!job || !isParticipant) {
+      setPhotos(EMPTY_JOB_PHOTOS);
+      return;
+    }
+    let cancelled = false;
+    getJobPhotos(job.id).then((result) => {
+      if (!cancelled) setPhotos(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [job?.id, isParticipant]);
+
+  const pickAfterPhotos = async () => {
+    if (!job) return;
+    setPhotoError('');
+    const room = MAX_JOB_PHOTOS - photos.afterPhotoUrls.length;
+    if (room <= 0) return;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsMultipleSelection: true,
+      selectionLimit: room,
+      quality: 0.7,
+    });
+    if (result.canceled || !result.assets?.length) return;
+    setPhotoBusy(true);
+    const err = await addAfterPhotos(job.id, result.assets.map((a) => a.uri));
+    if (err) {
+      setPhotoBusy(false);
+      setPhotoError(err);
+      return;
+    }
+    const refreshed = await getJobPhotos(job.id);
+    setPhotos(refreshed);
+    setPhotoBusy(false);
+  };
 
   const startEditingAddress = () => {
     setAddressDraft(exactAddress ?? '');
@@ -280,6 +342,34 @@ export default function JobDetailScreen() {
           ) : null}
           <Text style={[styles.details, { color: colors.mutedForeground }]}>{job.details}</Text>
         </Card>
+
+        {isParticipant && (photos.beforePhotoUrls.length || photos.afterPhotoUrls.length || canAddAfterPhotos) ? (
+          <Card style={{ gap: 12, marginTop: 12 }}>
+            {photos.beforePhotoUrls.length ? (
+              <View style={{ gap: 6 }}>
+                <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Before</Text>
+                <PhotoStrip uris={photos.beforePhotoUrls} />
+              </View>
+            ) : null}
+            {photos.afterPhotoUrls.length || canAddAfterPhotos ? (
+              <View style={{ gap: 6 }}>
+                <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>After</Text>
+                <PhotoStrip uris={photos.afterPhotoUrls} />
+                {canAddAfterPhotos && photos.afterPhotoUrls.length < MAX_JOB_PHOTOS ? (
+                  <Pressable testID="pick-after-photos" onPress={pickAfterPhotos} style={styles.addAfterPhotoRow} disabled={photoBusy}>
+                    {photoBusy ? (
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    ) : (
+                      <Ionicons name="camera-outline" size={16} color={colors.primary} />
+                    )}
+                    <Text style={[styles.locationText, { color: colors.primary }]}>Add completion photos</Text>
+                  </Pressable>
+                ) : null}
+                {photoError ? <Text style={[styles.error, { color: colors.destructive, marginTop: 0 }]}>{photoError}</Text> : null}
+              </View>
+            ) : null}
+          </Card>
+        ) : null}
 
         <Card style={{ gap: 4, marginTop: 12 }}>
           <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>People</Text>
@@ -540,4 +630,6 @@ const styles = StyleSheet.create({
   payNote: { fontFamily: 'Inter_400Regular', fontSize: 11.5, flex: 1 },
   error: { fontFamily: 'Inter_500Medium', fontSize: 13, marginTop: 12 },
   feeHint: { fontFamily: 'Inter_400Regular', fontSize: 11.5, textAlign: 'center' },
+  photoThumb: { width: 84, height: 84, borderRadius: 10 },
+  addAfterPhotoRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 },
 });
