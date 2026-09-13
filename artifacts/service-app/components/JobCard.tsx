@@ -45,6 +45,15 @@ export function JobCard({ job, showSave = true }: { job: Job; showSave?: boolean
         </Text>
       ) : null}
 
+      {user?.role === 'provider' ? (
+        <View style={styles.requirementsRow}>
+          <Ionicons name="shield-checkmark-outline" size={13} color={colors.mutedForeground} />
+          <Text numberOfLines={2} style={[styles.requirementsText, { color: colors.mutedForeground }]}>
+            Requirements: {job.specialRequirements || 'None specified'}
+          </Text>
+        </View>
+      ) : null}
+
       {job.location ? (
         <View style={styles.locationRow}>
           <Ionicons name="location-outline" size={13} color={colors.mutedForeground} />
@@ -87,6 +96,8 @@ const styles = StyleSheet.create({
   details: { fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 18 },
   locationRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   locationText: { fontFamily: 'Inter_400Regular', fontSize: 12, flex: 1 },
+  requirementsRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 5 },
+  requirementsText: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 16, flex: 1 },
   bottomRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   priceWrap: { flexDirection: 'row', alignItems: 'baseline', gap: 4, flex: 1 },
   price: { fontFamily: 'Inter_700Bold', fontSize: 16 },

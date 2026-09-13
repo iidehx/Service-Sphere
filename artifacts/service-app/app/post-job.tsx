@@ -6,7 +6,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Card, Field, HeaderBar, PrimaryButton, Screen } from '@/components/AppPrimitives';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
-import { CATEGORIES, CATEGORY_ICONS, isValidCoarseLocation, MAX_JOB_PHOTOS, useServiceApp } from '@/context/ServiceAppContext';
+import { CATEGORIES, CATEGORY_ICONS, isValidCoarseLocation, MAX_JOB_PHOTOS, MAX_SPECIAL_REQUIREMENTS_LENGTH, useServiceApp } from '@/context/ServiceAppContext';
 import { useColors } from '@/hooks/useColors';
 
 const TIME_OPTIONS = [
@@ -47,6 +47,7 @@ export default function PostJobScreen() {
     params.category && (CATEGORIES as readonly string[]).includes(params.category) ? params.category : null,
   );
   const [details, setDetails] = useState('');
+  const [specialRequirements, setSpecialRequirements] = useState('');
   const [location, setLocation] = useState('');
   const [exactAddress, setExactAddress] = useState('');
   const [price, setPrice] = useState('');
@@ -93,6 +94,9 @@ export default function PostJobScreen() {
       if (title.trim().length < 3) next.title = 'Give your job a short, clear title.';
       if (!category) next.category = 'Pick a category.';
       if (details.trim().length < 10) next.details = 'Describe the work in a bit more detail.';
+      if (specialRequirements.trim().length > MAX_SPECIAL_REQUIREMENTS_LENGTH) {
+        next.specialRequirements = `Keep special requirements under ${MAX_SPECIAL_REQUIREMENTS_LENGTH} characters.`;
+      }
       if (trimmedLocation.length < 3) next.location = 'Add a ZIP code or a neighborhood/area name.';
       else if (trimmedLocation.length > 40) next.location = 'Keep the area name under 40 characters.';
       else if (!isValidCoarseLocation(trimmedLocation)) {
@@ -114,6 +118,7 @@ export default function PostJobScreen() {
         title: title.trim(),
         category: category as string,
         details: details.trim(),
+        specialRequirements: specialRequirements.trim(),
         priceOffer: Math.round(priceNum * 100) / 100,
         scheduledAt: flexible ? 'Flexible — provider suggests a time' : (schedule as Date).toISOString(),
         location: trimmedLocation,
@@ -239,6 +244,19 @@ export default function PostJobScreen() {
             multiline
             testID="input-details"
           />
+          <Field
+            label="Permits & access requirements (optional)"
+            icon="shield-checkmark-outline"
+            placeholder="e.g. Parking restrictions, building check-in, required certification, or permit details"
+            value={specialRequirements}
+            onChangeText={setSpecialRequirements}
+            error={errors.specialRequirements}
+            multiline
+            testID="input-special-requirements"
+          />
+          <Text style={[styles.hint, { color: colors.mutedForeground }]}>
+            Providers can see this before accepting. Do not include entry codes or other private credentials.
+          </Text>
           <Field
             label="Location"
             icon="location-outline"

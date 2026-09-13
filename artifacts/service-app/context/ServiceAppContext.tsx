@@ -48,6 +48,7 @@ import {
   JobPhotos,
   makeSeedDb,
   MAX_JOB_PHOTOS,
+  MAX_SPECIAL_REQUIREMENTS_LENGTH,
   NotificationKind,
   PLATFORM_FEE_RATE,
   PublicProfile,
@@ -76,7 +77,7 @@ export type ProfilePatch = Partial<
 
 export type NewJobInput = Pick<
   Job,
-  'title' | 'category' | 'details' | 'priceOffer' | 'scheduledAt' | 'location' | 'leaveTimeToEmployee'
+  'title' | 'category' | 'details' | 'specialRequirements' | 'priceOffer' | 'scheduledAt' | 'location' | 'leaveTimeToEmployee'
 >;
 
 export type ReviewInput = {
@@ -115,6 +116,7 @@ type ServiceAppContextValue = {
   demoSignIn: (role: Role) => Promise<void>;
   // Jobs
   addJob: (input: NewJobInput) => Promise<{ error?: string; jobId?: string }>;
+  updateJobSpecialRequirements: (jobId: string, value: string) => Promise<string | null>;
   /** Stores the optional precise address in the job's participant-restricted subdocument. */
   setJobExactAddress: (jobId: string, address: string) => Promise<string | null>;
   /** Returns null if unset, or if the caller isn't an authorized participant. */
@@ -188,6 +190,7 @@ function mapJob(id: string, d: any): Job {
     title: d?.title ?? 'Untitled job',
     category: d?.category ?? 'Other',
     details: d?.details ?? '',
+    specialRequirements: typeof d?.specialRequirements === 'string' ? d.specialRequirements : '',
     priceOffer: typeof d?.priceOffer === 'number' ? d.priceOffer : 0,
     employerId: d?.employerId ?? '',
     employerName: d?.employerName ?? 'Employer',
@@ -550,7 +553,12 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
   }, [mode, fbUser, demoDb]);
 
   const jobs: Job[] = useMemo(() => {
-    const list = mode === 'firebase' ? fbJobs : demoDb?.jobs ?? [];
+    const list = mode === 'firebase'
+      ? fbJobs
+      : (demoDb?.jobs ?? []).map((job) => ({
+          ...job,
+          specialRequirements: typeof job.specialRequirements === 'string' ? job.specialRequirements : '',
+        }));
     return [...list].sort((a, b) => b.createdAtMs - a.createdAtMs);
   }, [mode, fbJobs, demoDb]);
 
@@ -903,10 +911,14 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
     if (!isValidCoarseLocation(input.location.trim())) {
       return { error: 'Location must be a ZIP code or a plain area/neighborhood name — not a street address.' };
     }
+    if (input.specialRequirements.trim().length > MAX_SPECIAL_REQUIREMENTS_LENGTH) {
+      return { error: `Keep special requirements under ${MAX_SPECIAL_REQUIREMENTS_LENGTH} characters.` };
+    }
     const payload = {
       ...input,
       title: input.title.trim(),
       details: input.details.trim(),
+      specialRequirements: input.specialRequirements.trim(),
       // Only the coarse, public area text is ever stored on the job doc
       // itself — see the `location` doc comment on the Job type.
       location: input.location.trim(),
@@ -944,6 +956,31 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
       return { jobId: ref.id };
     } catch (e) {
       return { error: friendlyError(e) };
+    }
+  };
+
+  const updateJobSpecialRequirements = async (jobId: string, value: string) => {
+    if (!user) return 'Please sign in first.';
+    const trimmed = value.trim();
+    if (trimmed.length > MAX_SPECIAL_REQUIREMENTS_LENGTH) {
+      return `Keep special requirements under ${MAX_SPECIAL_REQUIREMENTS_LENGTH} characters.`;
+    }
+    const job = jobs.find((item) => item.id === jobId);
+    if (!job || job.employerId !== user.id) return 'Only the job owner can edit special requirements.';
+    if (job.status !== 'open') return 'Special requirements can only be edited while the job is open.';
+    if (mode === 'demo') {
+      updateDemo((d) => ({
+        ...d,
+        jobs: d.jobs.map((item) => item.id === jobId ? { ...item, specialRequirements: trimmed } : item),
+      }));
+      return null;
+    }
+    try {
+      const { db } = getFirebase();
+      await updateDoc(doc(db, 'jobs', jobId), { specialRequirements: trimmed });
+      return null;
+    } catch (e) {
+      return friendlyError(e);
     }
   };
 
@@ -2004,6 +2041,7 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
       signOutUser,
       demoSignIn,
       addJob,
+      updateJobSpecialRequirements,
       setJobExactAddress,
       getJobExactAddress,
       getJobPhotos,

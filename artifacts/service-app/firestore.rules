@@ -236,13 +236,13 @@ service cloud.firestore {
 
     function validJobCreate() {
       return request.resource.data.keys().hasAll([
-          'title', 'category', 'details', 'priceOffer', 'scheduledAt', 'location',
+          'title', 'category', 'details', 'specialRequirements', 'priceOffer', 'scheduledAt', 'location',
           'leaveTimeToEmployee', 'employerId', 'employerName', 'status',
           'paymentStatus', 'employerQuoteAccepted', 'employeeQuoteAccepted',
           'reviewedBy', 'createdAtMs'
         ])
         && request.resource.data.keys().hasOnly([
-          'title', 'category', 'details', 'priceOffer', 'scheduledAt', 'location',
+          'title', 'category', 'details', 'specialRequirements', 'priceOffer', 'scheduledAt', 'location',
           'leaveTimeToEmployee', 'employerId', 'employerName',
           'status', 'paymentStatus', 'employerQuoteAccepted', 'employeeQuoteAccepted',
           'reviewedBy', 'createdAtMs'
@@ -252,6 +252,7 @@ service cloud.firestore {
         && request.resource.data.category is string && request.resource.data.category.size() <= 80
         && request.resource.data.details is string
         && request.resource.data.details.size() >= 10 && request.resource.data.details.size() <= 5000
+        && validSpecialRequirements(request.resource.data.specialRequirements)
         && request.resource.data.priceOffer is number && request.resource.data.priceOffer > 0
         && validScheduleValue(request.resource.data.scheduledAt, request.resource.data.leaveTimeToEmployee)
         && validLocationValue(request.resource.data.location)
@@ -288,6 +289,10 @@ service cloud.firestore {
         && (value.matches('^[0-9]{5}$') || value.matches('^[A-Za-z][A-Za-z -]{2,39}$'));
     }
 
+    function validSpecialRequirements(value) {
+      return value is string && value.size() <= 1000;
+    }
+
     function isProviderClaim() {
       return isProvider()
         && resource.data.status == 'open'
@@ -311,10 +316,14 @@ service cloud.firestore {
           request.resource.data.get('location', '') == resource.data.get('location', '')
           || validLocationValue(request.resource.data.get('location', ''))
         )
+        && (
+          request.resource.data.get('specialRequirements', '') == resource.data.get('specialRequirements', '')
+          || validSpecialRequirements(request.resource.data.get('specialRequirements', ''))
+        )
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly([
                'title', 'category', 'details', 'priceOffer', 'scheduledAt',
-               'location', 'leaveTimeToEmployee'
+               'location', 'leaveTimeToEmployee', 'specialRequirements'
              ]);
     }
 

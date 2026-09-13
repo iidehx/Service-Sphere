@@ -25,6 +25,7 @@ import {
   formatScheduledAt,
   JobPhotos,
   MAX_JOB_PHOTOS,
+  MAX_SPECIAL_REQUIREMENTS_LENGTH,
   PLATFORM_FEE_RATE,
   round2,
   timeAgo,
@@ -97,6 +98,7 @@ export default function JobDetailScreen() {
     getJobExactAddress,
     getJobPhotos,
     addAfterPhotos,
+    updateJobSpecialRequirements,
   } = useServiceApp();
 
   const job = useMemo(() => jobs.find((j) => j.id === id), [jobs, id]);
@@ -111,6 +113,10 @@ export default function JobDetailScreen() {
   const [photos, setPhotos] = useState<JobPhotos>(EMPTY_JOB_PHOTOS);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoError, setPhotoError] = useState('');
+  const [editingRequirements, setEditingRequirements] = useState(false);
+  const [requirementsDraft, setRequirementsDraft] = useState('');
+  const [requirementsError, setRequirementsError] = useState('');
+  const [requirementsBusy, setRequirementsBusy] = useState(false);
 
   const isEmployerOnJob = job?.employerId === user?.id;
   const isProviderOnJob = job?.employeeId === user?.id;
@@ -198,6 +204,29 @@ export default function JobDetailScreen() {
     }
     setExactAddress(addressDraft.trim() || null);
     setEditingAddress(false);
+  };
+
+  const startEditingRequirements = () => {
+    setRequirementsDraft(job?.specialRequirements ?? '');
+    setRequirementsError('');
+    setEditingRequirements(true);
+  };
+
+  const saveRequirements = async () => {
+    if (!job) return;
+    if (requirementsDraft.trim().length > MAX_SPECIAL_REQUIREMENTS_LENGTH) {
+      setRequirementsError(`Keep special requirements under ${MAX_SPECIAL_REQUIREMENTS_LENGTH} characters.`);
+      return;
+    }
+    setRequirementsBusy(true);
+    setRequirementsError('');
+    const err = await updateJobSpecialRequirements(job.id, requirementsDraft);
+    setRequirementsBusy(false);
+    if (err) {
+      setRequirementsError(err);
+      return;
+    }
+    setEditingRequirements(false);
   };
 
   if (!user) return null;
@@ -341,6 +370,52 @@ export default function JobDetailScreen() {
             </View>
           ) : null}
           <Text style={[styles.details, { color: colors.mutedForeground }]}>{job.details}</Text>
+        </Card>
+
+        <Card style={{ gap: 8, marginTop: 12 }}>
+          <View style={styles.requirementsHeader}>
+            <Ionicons name="shield-checkmark-outline" size={17} color={colors.primary} />
+            <Text style={[styles.sectionLabelStrong, { color: colors.foreground }]}>Permits & access requirements</Text>
+          </View>
+          {!editingRequirements ? (
+            <>
+              <Text style={[styles.details, { color: job.specialRequirements ? colors.foreground : colors.mutedForeground }]} testID="job-special-requirements">
+                {job.specialRequirements || 'None specified'}
+              </Text>
+              {isEmployerOnJob && job.status === 'open' ? (
+                <Pressable testID="edit-special-requirements" onPress={startEditingRequirements} style={styles.locationRow}>
+                  <Ionicons name="pencil-outline" size={14} color={colors.primary} />
+                  <Text style={[styles.locationText, { color: colors.primary }]}>Edit requirements</Text>
+                </Pressable>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <Field
+                icon="shield-checkmark-outline"
+                placeholder="Parking, building access, permits, or certifications"
+                value={requirementsDraft}
+                onChangeText={setRequirementsDraft}
+                error={requirementsError}
+                multiline
+                testID="input-edit-special-requirements"
+              />
+              <Text style={[styles.hint, { color: colors.mutedForeground }]}>
+                Optional. Providers can see this before accepting the job.
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <GhostButton
+                  testID="cancel-special-requirements"
+                  label="Cancel"
+                  onPress={() => {
+                    setEditingRequirements(false);
+                    setRequirementsError('');
+                  }}
+                />
+                <PrimaryButton testID="save-special-requirements" label="Save" onPress={saveRequirements} loading={requirementsBusy} />
+              </View>
+            </>
+          )}
         </Card>
 
         {isParticipant && (photos.beforePhotoUrls.length || photos.afterPhotoUrls.length || canAddAfterPhotos) ? (
@@ -622,6 +697,7 @@ const styles = StyleSheet.create({
   personRole: { fontFamily: 'Inter_400Regular', fontSize: 12 },
   pendingIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   quoteHeader: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  requirementsHeader: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   quoteBy: { fontFamily: 'Inter_400Regular', fontSize: 12, marginLeft: 'auto' },
   divider: { height: 1, marginVertical: 4 },
   acceptRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },

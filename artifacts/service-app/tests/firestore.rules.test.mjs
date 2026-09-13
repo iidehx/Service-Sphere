@@ -74,6 +74,7 @@ const job = (overrides = {}) => ({
   title: 'Deep clean a two-bedroom apartment',
   category: 'Cleaning',
   details: 'Clean the kitchen, bathrooms, floors, and inside the cabinets.',
+  specialRequirements: '',
   priceOffer: 180,
   scheduledAt: '2026-09-01T10:00:00.000Z',
   location: 'North Austin',
@@ -352,6 +353,48 @@ test('only employers can create jobs and disabled users cannot write', async () 
   );
   await assertFails(setDoc(doc(provider, 'jobs/provider-job'), job({ employerId: 'provider', employerName: 'Pat Provider' })));
   await assertFails(setDoc(doc(disabled, 'jobs/disabled-job'), job({ employerId: 'disabled', employerName: 'Disabled Employer' })));
+});
+
+test('job requirements are length-limited and editable only by the owner while open', async () => {
+  await seed();
+  const employer = dbFor('employer');
+  const provider = dbFor('provider');
+  const other = dbFor('other');
+
+  await assertSucceeds(setDoc(doc(employer, 'jobs/requirements-job'), job({
+    specialRequirements: 'Check in with security and use the loading dock.',
+    createdAtMs: now + 1,
+  })));
+  await assertFails(setDoc(doc(employer, 'jobs/oversized-requirements-job'), job({
+    specialRequirements: 'A'.repeat(1001),
+    createdAtMs: now + 2,
+  })));
+  const { specialRequirements, ...missingRequirements } = job({ createdAtMs: now + 3 });
+  await assertFails(setDoc(doc(employer, 'jobs/missing-requirements-job'), missingRequirements));
+
+  await assertSucceeds(updateDoc(doc(employer, 'jobs/open-job'), {
+    specialRequirements: 'A parking permit is required.',
+  }));
+  await assertFails(updateDoc(doc(provider, 'jobs/open-job'), { specialRequirements: 'Provider edit' }));
+  await assertFails(updateDoc(doc(other, 'jobs/open-job'), { specialRequirements: 'Other provider edit' }));
+  await assertFails(updateDoc(doc(employer, 'jobs/accepted-job'), { specialRequirements: 'Too late' }));
+  await assertFails(updateDoc(doc(employer, 'jobs/open-job'), { specialRequirements: 'A'.repeat(1001) }));
+});
+
+test('legacy jobs without requirements remain readable and can add them while open', async () => {
+  await seed();
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    const { specialRequirements, ...legacyJob } = job();
+    await setDoc(doc(db, 'jobs/legacy-no-requirements'), legacyJob);
+  });
+  const employer = dbFor('employer');
+  const provider = dbFor('provider');
+  await assertSucceeds(getDoc(doc(provider, 'jobs/legacy-no-requirements')));
+  await assertSucceeds(updateDoc(doc(employer, 'jobs/legacy-no-requirements'), { priceOffer: 190 }));
+  await assertSucceeds(updateDoc(doc(employer, 'jobs/legacy-no-requirements'), {
+    specialRequirements: 'Use visitor parking.',
+  }));
 });
 
 test('job creation requires a well-formed coarse location and rejects oversized, missing, or address-like values', async () => {

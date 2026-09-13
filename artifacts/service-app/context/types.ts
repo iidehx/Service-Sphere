@@ -94,6 +94,11 @@ export type Job = {
   title: string;
   category: string;
   details: string;
+  /**
+   * Public pre-acceptance notes about permits, certifications, building
+   * access, parking, or other job requirements. Legacy jobs map to ''.
+   */
+  specialRequirements: string;
   priceOffer: number;
   employerId: string;
   employerName: string;
@@ -253,6 +258,7 @@ export const REPORT_REASONS = [
 ];
 
 export const PLATFORM_FEE_RATE = 0.05;
+export const MAX_SPECIAL_REQUIREMENTS_LENGTH = 1000;
 
 export const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -565,6 +571,7 @@ export function makeSeedDb(): DemoDb {
       category: 'Cleaning',
       details:
         'Two bedroom apartment needs a detailed kitchen, bathroom, and floor clean before Friday. Supplies can be provided if needed.',
+      specialRequirements: 'Use the loading zone for parking and check in with the front desk for elevator access.',
       priceOffer: 180,
       employerId: 'employer-2',
       employerName: 'Taylor Brooks',
@@ -582,6 +589,7 @@ export function makeSeedDb(): DemoDb {
       category: 'Painting',
       details:
         'Repair three small nail holes and apply two coats of warm white paint to one accent wall. Paint already purchased.',
+      specialRequirements: '',
       priceOffer: 260,
       employerId: 'employer-1',
       employerName: 'Alex Morgan',
@@ -598,6 +606,7 @@ export function makeSeedDb(): DemoDb {
       title: 'Install smart doorbell',
       category: 'Handyman',
       details: 'Install and connect a wired smart doorbell. Existing chime and wiring are in place.',
+      specialRequirements: 'Provider must be comfortable working with low-voltage wiring.',
       priceOffer: 125,
       employerId: 'employer-1',
       employerName: 'Alex Morgan',
