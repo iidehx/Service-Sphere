@@ -18,6 +18,7 @@ import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
 import { ServiceAppContext, ServiceAppProvider, useServiceApp } from '@/context/ServiceAppContext';
 import { EMAIL_VERIFICATION_REQUIRED, getFirebase, isFirebaseConfigured } from '@/lib/firebase';
+import { isProfileComplete } from '@/context/types';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -142,26 +143,36 @@ function RootLayoutNav() {
   const isInTabs = segments[0] === '(tabs)';
   const isOnLogin = segments[0] === 'login' || segments[0] === undefined;
   const isOnVerification = segments[0] === 'verify-email';
+  const isOnOnboarding = segments[0] === 'onboarding';
+  const isOnProfile = segments[0] === '(tabs)' && segments[1] === 'profile';
+  const isOnProfileEdit = segments[0] === 'profile-edit';
 
   useEffect(() => {
     if (!ready) return;
 
+    const isComplete = user ? isProfileComplete(user) : false;
+
     // Route groups are URL-transparent: both / and /(tabs) display as the
     // root path. Send anonymous users to the explicit login route so the tab
     // navigator is unmounted instead of leaving an empty tab screen behind.
-    if (!user && (isInTabs || isOnVerification)) {
+    if (!user && (isInTabs || isOnVerification || isOnOnboarding)) {
       router.replace('/login');
     } else if (user && !needsRole && EMAIL_VERIFICATION_REQUIRED && !emailVerified && !isOnVerification) {
       router.replace('/verify-email');
-    } else if (user && !needsRole && (!EMAIL_VERIFICATION_REQUIRED || emailVerified) && isOnLogin) {
-      router.replace('/(tabs)');
+    } else if (user && !needsRole && (!EMAIL_VERIFICATION_REQUIRED || emailVerified)) {
+      if (!isComplete && !isOnOnboarding && !isOnProfile && !isOnProfileEdit) {
+        router.replace('/onboarding');
+      } else if (isComplete && (isOnLogin || isOnOnboarding)) {
+        router.replace('/(tabs)');
+      }
     }
-  }, [emailVerified, isInTabs, isOnLogin, isOnVerification, needsRole, ready, router, user]);
+  }, [emailVerified, isInTabs, isOnLogin, isOnOnboarding, isOnProfile, isOnProfileEdit, isOnVerification, needsRole, ready, router, user]);
 
   return (
     <Stack screenOptions={{ headerBackTitle: 'Back', headerShown: false }}>
       <Stack.Screen name="index" />
       <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="onboarding" />
       <Stack.Screen name="post-job" options={{ presentation: 'modal' }} />
       <Stack.Screen name="job/[id]" />
       <Stack.Screen name="chat/[id]" />

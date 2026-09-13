@@ -70,13 +70,13 @@ service cloud.firestore {
           'name', 'email', 'role', 'workArea', 'categories', 'priceRange',
           'companyInfo', 'bio', 'avatarUrl', 'ratingAvg', 'ratingCount',
           'recentReviews', 'savedJobIds', 'savedProviderIds', 'blockedUserIds',
-          'notifyQuotes', 'verified', 'availableForWork', 'createdAtMs'
+          'notifyQuotes', 'verified', 'availableForWork', 'availability', 'createdAtMs'
         ])
         && data.keys().hasOnly([
           'name', 'email', 'role', 'workArea', 'categories', 'priceRange',
           'companyInfo', 'bio', 'avatarUrl', 'ratingAvg', 'ratingCount',
           'recentReviews', 'savedJobIds', 'savedProviderIds', 'blockedUserIds',
-          'notifyQuotes', 'verified', 'availableForWork', 'createdAtMs',
+          'notifyQuotes', 'verified', 'availableForWork', 'availability', 'createdAtMs',
           'disabled'
         ])
         && data.name is string && data.name.size() >= 2 && data.name.size() <= 120
@@ -95,19 +95,20 @@ service cloud.firestore {
         && data.savedProviderIds is list && data.savedProviderIds.size() <= 500
         && data.blockedUserIds is list && data.blockedUserIds.size() <= 500
         && data.notifyQuotes is bool && data.verified is bool
-        && data.availableForWork is bool && data.createdAtMs is number;
+        && data.availableForWork is bool && data.availability is string && data.availability.size() <= 160
+        && data.createdAtMs is number;
     }
 
     function validPublicProfile(data) {
       return data.keys().hasAll([
           'name', 'role', 'workArea', 'categories', 'priceRange', 'companyInfo',
           'bio', 'avatarUrl', 'ratingAvg', 'ratingCount', 'recentReviews',
-          'verified', 'availableForWork', 'createdAtMs'
+          'verified', 'availableForWork', 'availability', 'createdAtMs'
         ])
         && data.keys().hasOnly([
           'name', 'role', 'workArea', 'categories', 'priceRange', 'companyInfo',
           'bio', 'avatarUrl', 'ratingAvg', 'ratingCount', 'recentReviews',
-          'verified', 'availableForWork', 'createdAtMs'
+          'verified', 'availableForWork', 'availability', 'createdAtMs'
         ])
         && data.name is string && data.name.size() >= 2 && data.name.size() <= 120
         && validRole(data.role)
@@ -120,7 +121,7 @@ service cloud.firestore {
         && data.ratingAvg is number && data.ratingAvg >= 0 && data.ratingAvg <= 5
         && data.ratingCount is int && data.ratingCount >= 0
         && data.recentReviews is list && data.recentReviews.size() <= 5
-        && data.verified is bool && data.availableForWork is bool
+        && data.verified is bool && data.availableForWork is bool && data.availability is string && data.availability.size() <= 160
         && data.createdAtMs is number;
     }
 
@@ -145,7 +146,20 @@ service cloud.firestore {
         && request.resource.data.recentReviews == privateProfile.recentReviews
         && request.resource.data.verified == privateProfile.verified
         && request.resource.data.availableForWork == privateProfile.availableForWork
+        && request.resource.data.availability == privateProfile.availability
         && request.resource.data.createdAtMs == privateProfile.createdAtMs;
+    }
+
+    function isProfileComplete(data) {
+      let isProv = data.role == 'provider';
+      let hasShared = data.name.size() >= 2 && data.workArea.size() >= 2 && data.availability.size() >= 2;
+      let hasProvFields = data.categories.size() > 0 && data.priceRange.size() >= 2;
+      let hasEmpFields = data.bio.size() >= 2 || data.companyInfo.size() >= 2;
+      return hasShared && (isProv ? hasProvFields : hasEmpFields);
+    }
+
+    function isComplete() {
+      return isProfileComplete(get(userPath(request.auth.uid)).data);
     }
 
     // Rating summaries are maintained by the trusted Firebase Functions trigger
@@ -154,14 +168,14 @@ service cloud.firestore {
       return [
         'name', 'workArea', 'categories', 'priceRange', 'companyInfo', 'bio',
         'avatarUrl', 'savedJobIds', 'savedProviderIds', 'blockedUserIds',
-        'notifyQuotes', 'availableForWork'
+        'notifyQuotes', 'availableForWork', 'availability'
       ];
     }
 
     function publicEditableFields() {
       return [
         'name', 'workArea', 'categories', 'priceRange', 'companyInfo', 'bio',
-        'avatarUrl', 'availableForWork'
+        'avatarUrl', 'availableForWork', 'availability'
       ];
     }
 
@@ -185,7 +199,7 @@ service cloud.firestore {
     }
 
     match /publicProfiles/{userId} {
-      allow read: if isActive();
+      allow read: if isActive() && (isComplete() || isAdmin() || isSelf(userId));
       allow create: if isSelf(userId) && canProvisionAccount()
         && validPublicProfile(request.resource.data)
         && hasEmptyRatingSummary(request.resource.data)
@@ -432,10 +446,10 @@ service cloud.firestore {
       // clause (employerId ==, status ==, or employeeId ==) can be proven
       // safe without fetching unrelated documents — see
       // ServiceAppContext.tsx for the corresponding client queries.
-      allow read: if isActive()
+      allow read: if isActive() && isComplete()
         && (isJobEmployer() || (isProvider() && resource.data.status == 'open') || isJobProvider());
-      allow create: if isActive() && isEmployer() && validJobCreate();
-      allow update: if isActive() && (
+      allow create: if isActive() && isComplete() && isEmployer() && validJobCreate();
+      allow update: if isActive() && isComplete() && (
         isProviderClaim()
         || isEmployerJobEdit()
         || validQuoteProposal()
@@ -445,11 +459,11 @@ service cloud.firestore {
         || validCompletion()
         || validReviewMarker(jobId)
       );
-      allow delete: if isActive() && isJobEmployer() && resource.data.status == 'open';
+      allow delete: if isActive() && isComplete() && isJobEmployer() && resource.data.status == 'open';
 
       match /review/{reviewerId} {
-        allow read: if isActive();
-        allow create: if isSelf(reviewerId) && isActive()
+        allow read: if isActive() && isComplete();
+        allow create: if isSelf(reviewerId) && isActive() && isComplete()
           && get(/databases/$(database)/documents/jobs/$(jobId)).data.status == 'completed'
           && get(/databases/$(database)/documents/jobs/$(jobId)).data.employerId == request.auth.uid
           && validReview(
@@ -460,8 +474,8 @@ service cloud.firestore {
       }
 
       match /employerReview/{reviewerId} {
-        allow read: if isActive();
-        allow create: if isSelf(reviewerId) && isActive()
+        allow read: if isActive() && isComplete();
+        allow create: if isSelf(reviewerId) && isActive() && isComplete()
           && get(/databases/$(database)/documents/jobs/$(jobId)).data.status == 'completed'
           && get(/databases/$(database)/documents/jobs/$(jobId)).data.get('employeeId', '') == request.auth.uid
           && validReview(
@@ -531,11 +545,11 @@ service cloud.firestore {
           return list is list && list.size() <= 6;
         }
 
-        allow read: if isActive() && (
+        allow read: if isActive() && isComplete() && (
           (docId == 'photos' && isPhotosParticipant())
           || isPrivateParticipant()
         );
-        allow create, update: if isActive() && isJobOwner()
+        allow create, update: if isActive() && isComplete() && isJobOwner()
           && docId == 'location'
           && request.resource.data.keys().hasOnly(['address', 'place'])
           && (!request.resource.data.keys().hasAny(['address']) || (
@@ -549,24 +563,24 @@ service cloud.firestore {
         // create/update the "after" photo list. Each write may only ever
         // touch its own field — the merged document can hold both lists,
         // but neither side can clobber the other's.
-        allow create: if isActive() && docId == 'photos' && validPhotosKeys()
+        allow create: if isActive() && isComplete() && docId == 'photos' && validPhotosKeys()
           && isJobOwner()
           && request.resource.data.keys().hasOnly(['beforePhotoUrls'])
           && validPhotoUrlList(request.resource.data.beforePhotoUrls);
-        allow create: if isActive() && docId == 'photos' && validPhotosKeys()
+        allow create: if isActive() && isComplete() && docId == 'photos' && validPhotosKeys()
           && isAssignedProvider()
           && request.resource.data.keys().hasOnly(['afterPhotoUrls'])
           && validPhotoUrlList(request.resource.data.afterPhotoUrls);
-        allow update: if isActive() && docId == 'photos' && validPhotosKeys()
+        allow update: if isActive() && isComplete() && docId == 'photos' && validPhotosKeys()
           && isJobOwner()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['beforePhotoUrls'])
           && validPhotoUrlList(request.resource.data.get('beforePhotoUrls', []));
-        allow update: if isActive() && docId == 'photos' && validPhotosKeys()
+        allow update: if isActive() && isComplete() && docId == 'photos' && validPhotosKeys()
           && isAssignedProvider()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['afterPhotoUrls'])
           && validPhotoUrlList(request.resource.data.get('afterPhotoUrls', []));
 
-        allow delete: if isActive() && isJobOwner();
+        allow delete: if isActive() && isComplete() && isJobOwner();
       }
     }
 
@@ -626,17 +640,19 @@ service cloud.firestore {
     }
 
     match /chats/{chatId} {
-      allow read: if isActive() && request.auth.uid in resource.data.participants;
-      allow create: if isActive() && validChatDocument()
+      allow read: if isActive() && isComplete()
+        && request.auth.uid in resource.data.participants;
+      allow create: if isActive() && isComplete() && validChatDocument()
         && (validJobChatCreate() || validDirectChatCreate());
-      allow update: if isActive() && request.auth.uid in resource.data.participants
+      allow update: if isActive() && isComplete()
+        && request.auth.uid in resource.data.participants
         && validChatMetadataUpdate();
       allow delete: if false;
 
       match /messages/{messageId} {
-        allow read: if isActive()
+        allow read: if isActive() && isComplete()
           && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
-        allow create: if isActive()
+        allow create: if isActive() && isComplete()
           && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants
           && request.resource.data.keys().hasOnly(['senderId', 'senderName', 'text', 'kind', 'createdAtMs'])
           && request.resource.data.keys().hasAll(['senderId', 'senderName', 'text', 'kind', 'createdAtMs'])

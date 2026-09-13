@@ -9,6 +9,7 @@ export type PublicProfileProjection = {
   avatarUrl: string;
   verified: boolean;
   availableForWork: boolean;
+  availability: string;
   createdAtMs: number;
 };
 
@@ -22,6 +23,7 @@ export function publicProfileFromUser(
 ): PublicProfileProjection {
   const role = user.role;
   const categories = user.categories;
+  const availability = user.availability ?? "";
   if (
     typeof user.name !== "string" ||
     (role !== "employer" && role !== "provider") ||
@@ -34,6 +36,7 @@ export function publicProfileFromUser(
     typeof user.avatarUrl !== "string" ||
     typeof user.verified !== "boolean" ||
     typeof user.availableForWork !== "boolean" ||
+    typeof availability !== "string" ||
     typeof user.createdAtMs !== "number" ||
     !Number.isFinite(user.createdAtMs)
   ) {
@@ -51,6 +54,7 @@ export function publicProfileFromUser(
     avatarUrl: user.avatarUrl,
     verified: user.verified,
     availableForWork: user.availableForWork,
+    availability,
     createdAtMs: user.createdAtMs,
   };
 }

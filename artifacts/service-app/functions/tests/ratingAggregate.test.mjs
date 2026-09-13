@@ -91,6 +91,7 @@ test("creates a complete public-profile mirror without private account fields", 
     avatarUrl: "",
     verified: true,
     availableForWork: true,
+    availability: "Weekdays 9am–5pm",
     createdAtMs: 100,
     savedJobIds: ["job-1"],
   });
@@ -106,6 +107,25 @@ test("creates a complete public-profile mirror without private account fields", 
     avatarUrl: "",
     verified: true,
     availableForWork: true,
+    availability: "Weekdays 9am–5pm",
     createdAtMs: 100,
   });
+});
+
+test("repairs a legacy public-profile mirror when availability is missing", () => {
+  const profile = publicProfileFromUser({
+    name: "Legacy Employer",
+    role: "employer",
+    workArea: "Austin, TX",
+    categories: [],
+    priceRange: "",
+    companyInfo: "Local homeowner",
+    bio: "",
+    avatarUrl: "",
+    verified: false,
+    availableForWork: true,
+    createdAtMs: 50,
+  });
+
+  assert.equal(profile.availability, "");
 });

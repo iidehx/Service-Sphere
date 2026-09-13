@@ -15,6 +15,7 @@ export default function ProfileEditScreen() {
 
   const [name, setName] = useState(user?.name ?? '');
   const [workArea, setWorkArea] = useState(user?.workArea ?? '');
+  const [availability, setAvailability] = useState(user?.availability ?? '');
   const [bio, setBio] = useState(user?.bio ?? '');
   const [priceRange, setPriceRange] = useState(user?.priceRange ?? '');
   const [companyInfo, setCompanyInfo] = useState(user?.companyInfo ?? '');
@@ -53,8 +54,8 @@ export default function ProfileEditScreen() {
     setBusy(true);
     setError('');
     const patch = isEmployer
-      ? { name: name.trim(), workArea: workArea.trim(), bio: bio.trim(), companyInfo: companyInfo.trim() }
-      : { name: name.trim(), workArea: workArea.trim(), bio: bio.trim(), priceRange: priceRange.trim(), categories, availableForWork };
+      ? { name: name.trim(), workArea: workArea.trim(), availability: availability.trim(), bio: bio.trim(), companyInfo: companyInfo.trim() }
+      : { name: name.trim(), workArea: workArea.trim(), availability: availability.trim(), bio: bio.trim(), priceRange: priceRange.trim(), categories, availableForWork };
     const err = await updateProfile(patch);
     setBusy(false);
     if (err) {
@@ -91,6 +92,14 @@ export default function ProfileEditScreen() {
             value={workArea}
             onChangeText={setWorkArea}
             testID="edit-area"
+          />
+          <Field
+            label="Availability Schedule"
+            icon="time-outline"
+            placeholder="e.g. Weekdays 9am-5pm"
+            value={availability}
+            onChangeText={setAvailability}
+            testID="edit-avail"
           />
           <Field
             label="About you"
@@ -139,7 +148,7 @@ export default function ProfileEditScreen() {
                 </View>
               </Card>
               <Field
-                label="Typical rate (optional)"
+                label="Typical rate range"
                 icon="cash-outline"
                 placeholder="e.g. $40–60/hr"
                 value={priceRange}

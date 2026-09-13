@@ -59,6 +59,7 @@ import {
   SessionUser,
   chatIdForJob,
   toPublicProfile,
+  isProfileComplete,
 } from './types';
 
 export * from './types';
@@ -69,7 +70,7 @@ export type GoogleIntent = 'login' | 'register';
 export type ProfilePatch = Partial<
   Pick<
     SessionUser,
-    'name' | 'workArea' | 'bio' | 'categories' | 'priceRange' | 'companyInfo' | 'avatarUrl' | 'notifyQuotes' | 'availableForWork'
+    'name' | 'workArea' | 'bio' | 'categories' | 'priceRange' | 'companyInfo' | 'avatarUrl' | 'notifyQuotes' | 'availableForWork' | 'availability'
   >
 >;
 
@@ -176,6 +177,7 @@ function mapUser(id: string, d: any): SessionUser {
     notifyQuotes: d?.notifyQuotes !== false,
     verified: Boolean(d?.verified),
     availableForWork: d?.availableForWork !== false,
+    availability: d?.availability ?? '',
     createdAtMs: typeof d?.createdAtMs === 'number' ? d.createdAtMs : Date.now(),
   };
 }
@@ -287,6 +289,7 @@ function newUserDoc(name: string, email: string, role: Role) {
     notifyQuotes: true,
     verified: false,
     availableForWork: true,
+    availability: '',
     createdAtMs: Date.now(),
   };
 }
@@ -306,6 +309,7 @@ function publicProfileDoc(user: Omit<SessionUser, 'id'> | SessionUser) {
     recentReviews: user.recentReviews,
     verified: Boolean(user.verified),
     availableForWork: user.availableForWork !== false,
+    availability: user.availability ?? '',
     createdAtMs: user.createdAtMs,
   };
 }
@@ -460,8 +464,14 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
   //   - Providers fetch the open marketplace plus jobs they are a
   //     participant in (claimed/negotiating, accepted, or completed),
   //     merged into one list.
+  const fbProfileComplete = Boolean(fbUser && isProfileComplete(fbUser));
+
   useEffect(() => {
     if (mode !== 'firebase' || !authUid || !fbUser) return;
+    if (!fbProfileComplete) {
+      setFbJobs([]);
+      return;
+    }
     const { db } = getFirebase();
     const unsubs: Array<() => void> = [];
 
@@ -502,17 +512,22 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
     }
 
     return () => unsubs.forEach((unsub) => unsub());
-  }, [mode, authUid, fbUser?.role]);
+  }, [mode, authUid, fbProfileComplete, fbUser?.role]);
 
   // ---- Firebase chat & notification subscriptions --------------------------
   useEffect(() => {
     if (mode !== 'firebase' || !authUid) return;
     const { db } = getFirebase();
-    const unsubChats = onSnapshot(
-      query(collection(db, 'chats'), where('participants', 'array-contains', authUid)),
-      (snap) => setFbChats(snap.docs.map((d) => mapChat(d.id, d.data()))),
-      () => undefined,
-    );
+    let unsubChats: () => void = () => {};
+    if (fbProfileComplete) {
+      unsubChats = onSnapshot(
+        query(collection(db, 'chats'), where('participants', 'array-contains', authUid)),
+        (snap) => setFbChats(snap.docs.map((d) => mapChat(d.id, d.data()))),
+        () => undefined,
+      );
+    } else {
+      setFbChats([]);
+    }
     const unsubNotifs = onSnapshot(
       query(collection(db, 'notifications'), where('userId', '==', authUid), limit(100)),
       (snap) => setFbNotifs(snap.docs.map((d) => mapNotif(d.id, d.data()))),
@@ -522,7 +537,7 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
       unsubChats();
       unsubNotifs();
     };
-  }, [mode, authUid]);
+  }, [mode, authUid, fbProfileComplete]);
 
   // ---- Derived state -------------------------------------------------------
   const user: SessionUser | null = useMemo(() => {
@@ -1898,6 +1913,15 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
     if (patch.avatarUrl !== undefined) clean.avatarUrl = patch.avatarUrl;
     if (patch.notifyQuotes !== undefined) clean.notifyQuotes = patch.notifyQuotes;
     if (patch.availableForWork !== undefined) clean.availableForWork = patch.availableForWork;
+    if (patch.availability !== undefined) clean.availability = patch.availability.trim();
+
+    if (isProfileComplete(user)) {
+      const proposed = { ...user, ...clean } as SessionUser;
+      if (!isProfileComplete(proposed)) {
+        return 'These changes would leave your profile incomplete. Please fill out all required fields.';
+      }
+    }
+
     if (Object.keys(clean).length === 0) return null;
 
     if (mode === 'demo') {
@@ -1919,6 +1943,7 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
         'companyInfo',
         'avatarUrl',
         'availableForWork',
+        'availability',
       ]);
       const publicChanges = Object.fromEntries(Object.entries(clean).filter(([key]) => publicKeys.has(key)));
       const batch = writeBatch(db);

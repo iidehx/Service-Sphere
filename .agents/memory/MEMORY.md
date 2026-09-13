@@ -4,3 +4,4 @@
 - [Firebase verification email delivery](firebase-email-delivery.md) — populate the Auth template sender and reply-to fields; saved template changes are server-side.
 - [Browser callable invocation](browser-callable-invocation.md) — browser callables need public Cloud Run invocation for CORS, while authentication remains enforced inside the function.
 - [Firestore list-query provability](firestore-list-query-provability.md) — role-scoped rule branches need a matching `where` in every client query/test; unconstrained collection reads break.
+- [Profile mirror schema changes](profile-mirror-schema-changes.md) — add profile fields to private/public batch writes together and keep trusted projection tolerant of legacy documents.

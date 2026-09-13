@@ -89,7 +89,6 @@ export type Review = {
 export function isValidCoarseLocation(value: string): boolean {
   return /^[0-9]{5}$/.test(value) || /^[A-Za-z][A-Za-z -]{2,39}$/.test(value);
 }
-
 export type Job = {
   id: string;
   title: string;
@@ -184,6 +183,7 @@ export type PublicProfile = {
   recentReviews: Review[];
   verified?: boolean;
   availableForWork?: boolean;
+  availability?: string;
   createdAtMs: number;
 };
 
@@ -395,6 +395,7 @@ export function makeSeedDb(): DemoDb {
     blockedUserIds: [],
     notifyQuotes: true,
     verified: true,
+    availability: 'Weekdays',
     createdAtMs: now - 220 * d,
   };
 
@@ -433,6 +434,7 @@ export function makeSeedDb(): DemoDb {
     notifyQuotes: true,
     verified: true,
     availableForWork: true,
+    availability: 'M-F 8am-6pm',
     createdAtMs: now - 400 * d,
   };
 
@@ -445,7 +447,7 @@ export function makeSeedDb(): DemoDb {
     workArea: 'Austin, TX',
     categories: [],
     companyInfo: '',
-    bio: '',
+    bio: 'Looking for reliable help.',
     ratingAvg: 4.6,
     ratingCount: 5,
     recentReviews: [],
@@ -454,6 +456,7 @@ export function makeSeedDb(): DemoDb {
     blockedUserIds: [],
     notifyQuotes: true,
     verified: false,
+    availability: 'Flexible',
     createdAtMs: now - 90 * d,
   };
 
@@ -492,6 +495,7 @@ export function makeSeedDb(): DemoDb {
     notifyQuotes: true,
     verified: true,
     availableForWork: true,
+    availability: 'Weekends only',
     createdAtMs: now - 500 * d,
   };
 
@@ -527,6 +531,7 @@ export function makeSeedDb(): DemoDb {
     notifyQuotes: true,
     verified: true,
     availableForWork: false,
+    availability: 'Evenings and Weekends',
     createdAtMs: now - 310 * d,
   };
 
@@ -548,6 +553,8 @@ export function makeSeedDb(): DemoDb {
     blockedUserIds: [],
     notifyQuotes: true,
     verified: false,
+    availableForWork: true,
+    availability: 'M, W, F mornings',
     createdAtMs: now - 60 * d,
   };
 
@@ -722,6 +729,28 @@ export function toPublicProfile(u: SessionUser | DemoUserRecord): PublicProfile 
     recentReviews: u.recentReviews,
     verified: u.verified,
     availableForWork: u.availableForWork,
+    availability: u.availability,
     createdAtMs: u.createdAtMs,
   };
+}
+
+export function isProfileComplete(user: Partial<PublicProfile>): boolean {
+  if (!user) return false;
+  const name = user.name?.trim() || '';
+  const workArea = user.workArea?.trim() || '';
+  const avail = user.availability?.trim() || '';
+
+  const hasShared = name.length >= 2 && workArea.length >= 2 && avail.length >= 2;
+  if (!hasShared) return false;
+
+  if (user.role === 'provider') {
+    const cats = user.categories || [];
+    const price = user.priceRange?.trim() || '';
+    return cats.length > 0 && price.length >= 2;
+  } else if (user.role === 'employer') {
+    const bio = user.bio?.trim() || '';
+    const comp = user.companyInfo?.trim() || '';
+    return bio.length >= 2 || comp.length >= 2;
+  }
+  return false;
 }

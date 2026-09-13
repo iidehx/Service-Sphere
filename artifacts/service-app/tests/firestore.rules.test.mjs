@@ -33,9 +33,9 @@ const privateUser = (role, name, extra = {}) => ({
   role,
   workArea: 'Austin, TX',
   categories: role === 'provider' ? ['Cleaning'] : [],
-  priceRange: '',
+  priceRange: role === 'provider' ? '$40-$60' : '',
   companyInfo: '',
-  bio: '',
+  bio: 'A simple bio.',
   avatarUrl: '',
   ratingAvg: 0,
   ratingCount: 0,
@@ -46,6 +46,7 @@ const privateUser = (role, name, extra = {}) => ({
   notifyQuotes: true,
   verified: false,
   availableForWork: true,
+  availability: 'Weekdays 9-5',
   createdAtMs: now,
   ...extra,
 });
@@ -55,15 +56,16 @@ const publicProfile = (role, name, extra = {}) => ({
   role,
   workArea: 'Austin, TX',
   categories: role === 'provider' ? ['Cleaning'] : [],
-  priceRange: '',
+  priceRange: role === 'provider' ? '$40-$60' : '',
   companyInfo: '',
-  bio: '',
+  bio: 'A simple bio.',
   avatarUrl: '',
   ratingAvg: 0,
   ratingCount: 0,
   recentReviews: [],
   verified: false,
   availableForWork: true,
+  availability: 'Weekdays 9-5',
   createdAtMs: now,
   ...extra,
 });
@@ -624,6 +626,46 @@ test('an employer can read only jobs they own — never another employer\'s, by 
   await assertFails(getDocs(query(collection(employer, 'jobs'), where('status', '==', 'open'))));
 });
 
+test('incomplete accounts cannot access marketplace', async () => {
+  await seed();
+  const incompleteDb = dbFor('incomplete');
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'users/incomplete'), privateUser('provider', 'Inc', { availability: '' }));
+  });
+
+  await assertFails(getDocs(query(collection(incompleteDb, 'jobs'), where('status', '==', 'open'))));
+  await assertFails(getDoc(doc(incompleteDb, 'publicProfiles/employer')));
+  await assertSucceeds(getDoc(doc(incompleteDb, 'users/incomplete')));
+});
+
+test('a legacy incomplete account can complete onboarding and enter the marketplace', async () => {
+  const legacyPrivate = privateUser('provider', 'Legacy Provider');
+  const legacyPublic = publicProfile('provider', 'Legacy Provider');
+  delete legacyPrivate.availability;
+  delete legacyPublic.availability;
+
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'users/legacy-provider'), legacyPrivate);
+    await setDoc(doc(db, 'publicProfiles/legacy-provider'), legacyPublic);
+    await setDoc(doc(db, 'jobs/legacy-visible-job'), job());
+  });
+
+  const legacyDb = dbFor('legacy-provider');
+  await assertFails(getDocs(query(collection(legacyDb, 'jobs'), where('status', '==', 'open'))));
+
+  const completedPrivate = { ...legacyPrivate, availability: 'Weekdays 9-5' };
+  const completedPublic = { ...legacyPublic, availability: 'Weekdays 9-5' };
+  const onboarding = writeBatch(legacyDb);
+  onboarding.update(doc(legacyDb, 'users/legacy-provider'), { availability: completedPrivate.availability });
+  onboarding.set(doc(legacyDb, 'publicProfiles/legacy-provider'), completedPublic, { merge: true });
+  await assertSucceeds(onboarding.commit());
+
+  const browseResults = await getDocs(query(collection(legacyDb, 'jobs'), where('status', '==', 'open')));
+  assert.ok(browseResults.docs.some((result) => result.id === 'legacy-visible-job'));
+});
+
 test('providers can browse any employer\'s open jobs and keep access to jobs they participate in, but not other non-open jobs', async () => {
   await seed();
   const provider = dbFor('provider'); // employeeId on accepted-job, quote-job, completed-job
@@ -743,6 +785,54 @@ test('chat and message access is limited to participants and message identity is
       text: 'Spoofed sender',
       kind: 'text',
       createdAtMs: now + 2,
+    }),
+  );
+});
+
+test('incomplete accounts cannot bypass onboarding through chats or messages', async () => {
+  await seed();
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(
+      doc(db, 'users/incomplete-employer'),
+      privateUser('employer', 'Incomplete Employer', { availability: '' }),
+    );
+  });
+
+  const incomplete = dbFor('incomplete-employer');
+  await assertFails(
+    setDoc(doc(incomplete, 'chats/direct-incomplete-provider'), {
+      jobId: '',
+      jobTitle: 'Direct message',
+      participants: ['incomplete-employer', 'provider'],
+      participantNames: { 'incomplete-employer': 'Incomplete Employer', provider: 'Pat Provider' },
+      lastMessage: '',
+      lastMessageAtMs: now,
+      lastReadAt: {},
+      createdAtMs: now,
+    }),
+  );
+  await assertFails(getDoc(doc(incomplete, 'chats/chat-open-job')));
+
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await updateDoc(doc(db, 'chats/chat-open-job'), {
+      participants: ['employer', 'provider', 'incomplete-employer'],
+      participantNames: {
+        employer: 'Emma Employer',
+        provider: 'Pat Provider',
+        'incomplete-employer': 'Incomplete Employer',
+      },
+    });
+  });
+  await assertFails(getDoc(doc(incomplete, 'chats/chat-open-job')));
+  await assertFails(
+    addDoc(collection(incomplete, 'chats/chat-open-job/messages'), {
+      senderId: 'incomplete-employer',
+      senderName: 'Incomplete Employer',
+      text: 'Trying to bypass onboarding',
+      kind: 'text',
+      createdAtMs: now + 3,
     }),
   );
 });
