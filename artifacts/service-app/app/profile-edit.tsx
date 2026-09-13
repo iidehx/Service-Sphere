@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
@@ -7,6 +7,8 @@ import { Avatar, Card, Field, HeaderBar, PrimaryButton, Screen } from '@/compone
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { CATEGORIES, useServiceApp } from '@/context/ServiceAppContext';
 import { useColors } from '@/hooks/useColors';
+import { AreaCoordinates } from '@/context/types';
+import { captureCoarseAreaLocation } from '@/lib/coarseAreaLocation';
 
 export default function ProfileEditScreen() {
   const colors = useColors();
@@ -15,6 +17,7 @@ export default function ProfileEditScreen() {
 
   const [name, setName] = useState(user?.name ?? '');
   const [workArea, setWorkArea] = useState(user?.workArea ?? '');
+  const [areaCoordinates, setAreaCoordinates] = useState<AreaCoordinates | null>(user?.areaCoordinates ?? null);
   const [availability, setAvailability] = useState(user?.availability ?? '');
   const [bio, setBio] = useState(user?.bio ?? '');
   const [priceRange, setPriceRange] = useState(user?.priceRange ?? '');
@@ -24,6 +27,8 @@ export default function ProfileEditScreen() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [avatarBusy, setAvatarBusy] = useState(false);
+  const [locationBusy, setLocationBusy] = useState(false);
+  const [locationNeedsSettings, setLocationNeedsSettings] = useState(false);
 
   if (!user) return null;
   const isEmployer = user.role === 'employer';
@@ -46,6 +51,25 @@ export default function ProfileEditScreen() {
   const toggleCategory = (c: string) =>
     setCategories((prev) => (prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]));
 
+  const setCurrentArea = async () => {
+    setLocationBusy(true);
+    setError('');
+    try {
+      const result = await captureCoarseAreaLocation();
+      if ('error' in result) {
+        setError(result.error);
+        setLocationNeedsSettings(result.needsSettings);
+      } else {
+        setAreaCoordinates(result.coordinates);
+        setLocationNeedsSettings(false);
+      }
+    } catch {
+      setError('Your current area could not be read. Check location access and try again.');
+    } finally {
+      setLocationBusy(false);
+    }
+  };
+
   const save = async () => {
     if (name.trim().length < 2) {
       setError('Enter your name.');
@@ -55,7 +79,7 @@ export default function ProfileEditScreen() {
     setError('');
     const patch = isEmployer
       ? { name: name.trim(), workArea: workArea.trim(), availability: availability.trim(), bio: bio.trim(), companyInfo: companyInfo.trim() }
-      : { name: name.trim(), workArea: workArea.trim(), availability: availability.trim(), bio: bio.trim(), priceRange: priceRange.trim(), categories, availableForWork };
+      : { name: name.trim(), workArea: workArea.trim(), areaCoordinates, availability: availability.trim(), bio: bio.trim(), priceRange: priceRange.trim(), categories, availableForWork };
     const err = await updateProfile(patch);
     setBusy(false);
     if (err) {
@@ -90,9 +114,39 @@ export default function ProfileEditScreen() {
             icon="location-outline"
             placeholder="e.g. Brooklyn, NY"
             value={workArea}
-            onChangeText={setWorkArea}
+            onChangeText={(value) => {
+              setWorkArea(value);
+              setAreaCoordinates(null);
+            }}
             testID="edit-area"
           />
+          {!isEmployer ? (
+            <Card style={styles.locationCard}>
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={[styles.availLabel, { color: colors.foreground }]}>
+                  {areaCoordinates ? 'Distance matching is ready' : 'Enable distance matching'}
+                </Text>
+                <Text style={[styles.availHint, { color: colors.mutedForeground }]}>
+                  We store only a rounded area, never your exact device location.
+                </Text>
+              </View>
+              <Pressable
+                testID="set-current-work-area"
+                accessibilityRole="button"
+                accessibilityLabel="Use current area for distance matching"
+                disabled={locationBusy}
+                onPress={locationNeedsSettings && Platform.OS !== 'web' ? () => Linking.openSettings() : setCurrentArea}
+                style={[styles.locationButton, { borderColor: colors.border }]}
+              >
+                {locationBusy
+                  ? <ActivityIndicator size="small" color={colors.primary} />
+                  : <Ionicons name={locationNeedsSettings ? 'settings-outline' : 'locate-outline'} size={18} color={colors.primary} />}
+                <Text style={[styles.locationButtonText, { color: colors.primary }]}>
+                  {locationNeedsSettings ? 'Settings' : areaCoordinates ? 'Update' : 'Use area'}
+                </Text>
+              </Pressable>
+            </Card>
+          ) : null}
           <Field
             label="Availability Schedule"
             icon="time-outline"
@@ -232,6 +286,9 @@ const styles = StyleSheet.create({
   availDot: { width: 10, height: 10, borderRadius: 5 },
   availLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
   availHint: { fontFamily: 'Inter_400Regular', fontSize: 12, marginTop: 2 },
+  locationCard: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  locationButton: { minHeight: 42, borderWidth: 1, borderRadius: 9, paddingHorizontal: 11, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  locationButtonText: { fontFamily: 'Inter_600SemiBold', fontSize: 12.5 },
   toggleTrack: { width: 44, height: 26, borderRadius: 13, justifyContent: 'center' },
   toggleThumb: { width: 22, height: 22, borderRadius: 11, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 2, shadowOffset: { width: 0, height: 1 } },
 });

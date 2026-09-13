@@ -8,6 +8,7 @@ import { JobCard } from '@/components/JobCard';
 import { Screen } from '@/components/AppPrimitives';
 import { CATEGORIES, CATEGORY_ICONS, firstNameOf, greetingForNow, useServiceApp } from '@/context/ServiceAppContext';
 import { useColors } from '@/hooks/useColors';
+import { filterJobsByFit, getProviderBrowseJobs } from '@/lib/jobFit';
 
 function StatCard({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap; label: string; value: string }) {
   const colors = useColors();
@@ -26,28 +27,31 @@ export default function HomeScreen() {
   const colors = useColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user, jobs, unreadNotificationCount } = useServiceApp();
+  const { user, jobs, jobFitFilters, unreadNotificationCount } = useServiceApp();
 
   const myJobs = useMemo(() => (user ? jobs.filter((j) => j.employerId === user.id) : []), [jobs, user]);
   const available = useMemo(
     () =>
       user
-        ? jobs.filter(
-            (j) => j.status === 'open' && j.employerId !== user.id && !user.blockedUserIds.includes(j.employerId),
-          )
+        ? getProviderBrowseJobs(jobs, user)
         : [],
     [jobs, user],
   );
   const matched = useMemo(() => {
     if (!user) return [];
-    return [...available]
+    const fitted = user.role === 'provider' ? filterJobsByFit(available, user, jobFitFilters).jobs : available;
+    return [...fitted]
       .sort((a, b) => {
         const am = user.categories.includes(a.category) ? 1 : 0;
         const bm = user.categories.includes(b.category) ? 1 : 0;
         return bm - am || b.createdAtMs - a.createdAtMs;
       })
       .slice(0, 5);
-  }, [available, user]);
+  }, [available, user, jobFitFilters]);
+  const hasActiveFitFilters =
+    jobFitFilters.category !== null
+    || jobFitFilters.maxDistanceMiles !== null
+    || jobFitFilters.workTimeFit;
 
   if (!user) return null;
   const isEmployer = user.role === 'employer';
@@ -177,7 +181,15 @@ export default function HomeScreen() {
 
             <SectionTitle title="New jobs for you" action="Browse all" onAction={() => router.push('/(tabs)/jobs')} />
             {matched.length === 0 ? (
-              <EmptyState icon="search-outline" title="No open jobs right now" body="Check back soon — new jobs are posted all the time." />
+              <EmptyState
+                icon="search-outline"
+                title={available.length > 0 && hasActiveFitFilters ? 'Your filters hide open jobs' : 'No open jobs right now'}
+                body={
+                  available.length > 0 && hasActiveFitFilters
+                    ? `${available.length} open ${available.length === 1 ? 'job does' : 'jobs do'} not match your saved fit filters. Open Browse to adjust or clear them.`
+                    : 'Check back soon — new jobs are posted all the time.'
+                }
+              />
             ) : (
               matched.map((job) => <JobCard key={job.id} job={job} />)
             )}

@@ -420,6 +420,30 @@ test('job creation requires a well-formed coarse location and rejects oversized,
   await assertFails(setDoc(doc(employer, 'jobs/missing-location'), withoutLocation));
 });
 
+test('providers and jobs can save rounded coarse centroids but not precise coordinates', async () => {
+  await seed();
+  const provider = dbFor('provider');
+  const employer = dbFor('employer');
+  const rounded = { latE2: 3027, lngE2: -9774 };
+
+  const profileBatch = writeBatch(provider);
+  profileBatch.update(doc(provider, 'users/provider'), { areaCoordinates: rounded });
+  profileBatch.update(doc(provider, 'publicProfiles/provider'), { areaCoordinates: rounded });
+  await assertSucceeds(profileBatch.commit());
+  await assertFails(updateDoc(doc(provider, 'users/provider'), {
+    areaCoordinates: { latE2: 3027.2, lngE2: -9774.31 },
+  }));
+
+  await assertSucceeds(setDoc(doc(employer, 'jobs/rounded-area-job'), job({
+    areaCoordinates: rounded,
+    createdAtMs: now + 20,
+  })));
+  await assertFails(setDoc(doc(employer, 'jobs/precise-area-job'), job({
+    areaCoordinates: { latE2: 3027.2, lngE2: -9774.31 },
+    createdAtMs: now + 21,
+  })));
+});
+
 test('the public job document rejects locationPlace entirely — normalized place metadata only lives in the private subdocument', async () => {
   await seed();
   const employer = dbFor('employer');

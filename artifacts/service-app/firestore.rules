@@ -76,7 +76,7 @@ service cloud.firestore {
           'name', 'email', 'role', 'workArea', 'categories', 'priceRange',
           'companyInfo', 'bio', 'avatarUrl', 'ratingAvg', 'ratingCount',
           'recentReviews', 'savedJobIds', 'savedProviderIds', 'blockedUserIds',
-          'notifyQuotes', 'verified', 'availableForWork', 'availability', 'createdAtMs',
+          'notifyQuotes', 'verified', 'availableForWork', 'availability', 'areaCoordinates', 'createdAtMs',
           'disabled'
         ])
         && data.name is string && data.name.size() >= 2 && data.name.size() <= 120
@@ -96,7 +96,21 @@ service cloud.firestore {
         && data.blockedUserIds is list && data.blockedUserIds.size() <= 500
         && data.notifyQuotes is bool && data.verified is bool
         && data.availableForWork is bool && data.availability is string && data.availability.size() <= 160
-        && data.createdAtMs is number;
+        && data.createdAtMs is number
+        && validAreaCoordinates(data);
+    }
+
+    function validAreaCoordinates(data) {
+      return !data.keys().hasAny(['areaCoordinates'])
+        || (
+          data.areaCoordinates is map
+          && data.areaCoordinates.keys().hasOnly(['latE2', 'lngE2'])
+          && data.areaCoordinates.keys().hasAll(['latE2', 'lngE2'])
+          && data.areaCoordinates.latE2 is int
+          && data.areaCoordinates.latE2 >= -9000 && data.areaCoordinates.latE2 <= 9000
+          && data.areaCoordinates.lngE2 is int
+          && data.areaCoordinates.lngE2 >= -18000 && data.areaCoordinates.lngE2 <= 18000
+        );
     }
 
     function validPublicProfile(data) {
@@ -108,7 +122,7 @@ service cloud.firestore {
         && data.keys().hasOnly([
           'name', 'role', 'workArea', 'categories', 'priceRange', 'companyInfo',
           'bio', 'avatarUrl', 'ratingAvg', 'ratingCount', 'recentReviews',
-          'verified', 'availableForWork', 'availability', 'createdAtMs'
+          'verified', 'availableForWork', 'availability', 'areaCoordinates', 'createdAtMs'
         ])
         && data.name is string && data.name.size() >= 2 && data.name.size() <= 120
         && validRole(data.role)
@@ -122,7 +136,8 @@ service cloud.firestore {
         && data.ratingCount is int && data.ratingCount >= 0
         && data.recentReviews is list && data.recentReviews.size() <= 5
         && data.verified is bool && data.availableForWork is bool && data.availability is string && data.availability.size() <= 160
-        && data.createdAtMs is number;
+        && data.createdAtMs is number
+        && validAreaCoordinates(data);
     }
 
     function hasEmptyRatingSummary(data) {
@@ -136,6 +151,7 @@ service cloud.firestore {
       return request.resource.data.name == privateProfile.name
         && request.resource.data.role == privateProfile.role
         && request.resource.data.workArea == privateProfile.workArea
+        && request.resource.data.get('areaCoordinates', null) == privateProfile.get('areaCoordinates', null)
         && request.resource.data.categories == privateProfile.categories
         && request.resource.data.priceRange == privateProfile.priceRange
         && request.resource.data.companyInfo == privateProfile.companyInfo
@@ -168,14 +184,14 @@ service cloud.firestore {
       return [
         'name', 'workArea', 'categories', 'priceRange', 'companyInfo', 'bio',
         'avatarUrl', 'savedJobIds', 'savedProviderIds', 'blockedUserIds',
-        'notifyQuotes', 'availableForWork', 'availability'
+        'notifyQuotes', 'availableForWork', 'availability', 'areaCoordinates'
       ];
     }
 
     function publicEditableFields() {
       return [
         'name', 'workArea', 'categories', 'priceRange', 'companyInfo', 'bio',
-        'avatarUrl', 'availableForWork', 'availability'
+        'avatarUrl', 'availableForWork', 'availability', 'areaCoordinates'
       ];
     }
 
@@ -190,6 +206,7 @@ service cloud.firestore {
         && request.resource.data.verified == false
         && !request.resource.data.keys().hasAny(['disabled']);
       allow update: if (isSelf(userId) && isActive()
+          && validUserDocument(request.resource.data)
           && request.resource.data.diff(resource.data).affectedKeys()
                .hasOnly(selfEditableUserFields()))
         || isAdmin();
@@ -243,7 +260,7 @@ service cloud.firestore {
         ])
         && request.resource.data.keys().hasOnly([
           'title', 'category', 'details', 'specialRequirements', 'priceOffer', 'scheduledAt', 'location',
-          'leaveTimeToEmployee', 'employerId', 'employerName',
+          'leaveTimeToEmployee', 'areaCoordinates', 'employerId', 'employerName',
           'status', 'paymentStatus', 'employerQuoteAccepted', 'employeeQuoteAccepted',
           'reviewedBy', 'createdAtMs'
         ])
@@ -264,7 +281,8 @@ service cloud.firestore {
         && request.resource.data.employerQuoteAccepted == false
         && request.resource.data.employeeQuoteAccepted == false
         && request.resource.data.reviewedBy is list && request.resource.data.reviewedBy.size() == 0
-        && request.resource.data.createdAtMs is number;
+        && request.resource.data.createdAtMs is number
+        && validAreaCoordinates(request.resource.data);
     }
 
     function validScheduleValue(value, flexible) {
@@ -312,6 +330,7 @@ service cloud.firestore {
         && resource.data.status == 'open'
         && request.resource.data.status == 'open'
         && validScheduleValue(request.resource.data.scheduledAt, request.resource.data.leaveTimeToEmployee)
+        && validAreaCoordinates(request.resource.data)
         && (
           request.resource.data.get('location', '') == resource.data.get('location', '')
           || validLocationValue(request.resource.data.get('location', ''))
@@ -323,7 +342,7 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly([
                'title', 'category', 'details', 'priceOffer', 'scheduledAt',
-               'location', 'leaveTimeToEmployee', 'specialRequirements'
+               'location', 'areaCoordinates', 'leaveTimeToEmployee', 'specialRequirements'
              ]);
     }
 

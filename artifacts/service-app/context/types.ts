@@ -9,6 +9,28 @@ export type PaymentStatus = 'pending' | 'paid' | 'refunded';
 export type NotificationKind = 'job' | 'quote' | 'payment' | 'review' | 'message' | 'system';
 export type MessageKind = 'text' | 'system' | 'quote';
 
+export type AreaCoordinates = {
+  /** Latitude multiplied by 100; integer storage enforces coarse precision. */
+  latE2: number;
+  /** Longitude multiplied by 100; integer storage enforces coarse precision. */
+  lngE2: number;
+};
+
+export type JobFitFilters = {
+  category: string | null;
+  maxDistanceMiles: number | null;
+  workTimeFit: boolean;
+  /** Reserved for additive filters without changing the browse-state contract. */
+  criteria: Record<string, boolean | number | string>;
+};
+
+export const EMPTY_JOB_FIT_FILTERS: JobFitFilters = {
+  category: null,
+  maxDistanceMiles: null,
+  workTimeFit: false,
+  criteria: {},
+};
+
 export type QuoteBreakdown = {
   labor: number;
   materials: number;
@@ -124,6 +146,11 @@ export type Job = {
    * this field existed map to ''.
    */
   location: string;
+  /**
+   * Optional centroid for the public coarse area, never an exact address.
+   * A trusted geocoding process may populate this later.
+   */
+  areaCoordinates?: AreaCoordinates;
   leaveTimeToEmployee: boolean;
   proposedPrice?: number;
   quoteBreakdown?: QuoteBreakdown;
@@ -178,6 +205,8 @@ export type PublicProfile = {
   name: string;
   role: Role;
   workArea: string;
+  /** Optional centroid for the provider's public service area. */
+  areaCoordinates?: AreaCoordinates;
   categories: string[];
   priceRange?: string;
   companyInfo?: string;
@@ -416,6 +445,7 @@ export function makeSeedDb(): DemoDb {
     password: 'password',
     role: 'provider',
     workArea: 'Austin, TX',
+    areaCoordinates: { latE2: 3027, lngE2: -9774 },
     categories: ['Cleaning', 'Handyman', 'Painting'],
     priceRange: '$40–$80 / hour',
     bio: 'Detail-focused handyman and painter with 6 years of experience.',
@@ -582,6 +612,7 @@ export function makeSeedDb(): DemoDb {
       status: 'open',
       scheduledAt: 'Tomorrow · 10:00 AM',
       location: '78704',
+      areaCoordinates: { latE2: 3024, lngE2: -9777 },
       leaveTimeToEmployee: false,
       paymentStatus: 'pending',
       reviewedBy: [],
@@ -600,6 +631,7 @@ export function makeSeedDb(): DemoDb {
       status: 'open',
       scheduledAt: 'Sat, Aug 15 · Flexible',
       location: 'South Congress',
+      areaCoordinates: { latE2: 3025, lngE2: -9777 },
       leaveTimeToEmployee: true,
       paymentStatus: 'pending',
       reviewedBy: [],

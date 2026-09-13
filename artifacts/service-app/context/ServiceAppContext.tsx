@@ -45,8 +45,10 @@ import {
   DemoDb,
   DEMO_STORAGE_KEY,
   EMPTY_JOB_PHOTOS,
+  EMPTY_JOB_FIT_FILTERS,
   isValidCoarseLocation,
   Job,
+  JobFitFilters,
   JobPhotos,
   makeSeedDb,
   MAX_JOB_PHOTOS,
@@ -75,11 +77,11 @@ export type ProfilePatch = Partial<
     SessionUser,
     'name' | 'workArea' | 'bio' | 'categories' | 'priceRange' | 'companyInfo' | 'avatarUrl' | 'notifyQuotes' | 'availableForWork' | 'availability'
   >
->;
+> & { areaCoordinates?: SessionUser['areaCoordinates'] | null };
 
 export type NewJobInput = Pick<
   Job,
-  'title' | 'category' | 'details' | 'specialRequirements' | 'priceOffer' | 'scheduledAt' | 'location' | 'leaveTimeToEmployee'
+  'title' | 'category' | 'details' | 'specialRequirements' | 'priceOffer' | 'scheduledAt' | 'location' | 'areaCoordinates' | 'leaveTimeToEmployee'
 >;
 
 export type ReviewInput = {
@@ -100,6 +102,9 @@ type ServiceAppContextValue = {
   hasPasswordAuth: boolean;
   needsRole: boolean;
   jobs: Job[];
+  jobFitFilters: JobFitFilters;
+  setJobFitFilters: (filters: JobFitFilters) => void;
+  clearJobFitFilters: () => void;
   chats: Chat[];
   notifications: AppNotification[];
   unreadNotificationCount: number;
@@ -167,6 +172,7 @@ function mapUser(id: string, d: any): SessionUser {
     email: d?.email ?? '',
     role: d?.role === 'provider' ? 'provider' : 'employer',
     workArea: d?.workArea ?? '',
+    areaCoordinates: d?.areaCoordinates ?? undefined,
     categories: Array.isArray(d?.categories) ? d.categories : [],
     priceRange: d?.priceRange ?? '',
     companyInfo: d?.companyInfo ?? '',
@@ -203,6 +209,7 @@ function mapJob(id: string, d: any): Job {
     // Legacy jobs created before this field existed have no location at all —
     // default to '' so every surface can safely treat it as "not provided".
     location: typeof d?.location === 'string' ? d.location : '',
+    areaCoordinates: d?.areaCoordinates ?? undefined,
     leaveTimeToEmployee: Boolean(d?.leaveTimeToEmployee),
     proposedPrice: typeof d?.proposedPrice === 'number' ? d.proposedPrice : undefined,
     quoteBreakdown: d?.quoteBreakdown ?? undefined,
@@ -244,6 +251,18 @@ function mapNotif(id: string, d: any): AppNotification {
     read: Boolean(d?.read),
     createdAtMs: typeof d?.createdAtMs === 'number' ? d.createdAtMs : Date.now(),
   };
+}
+
+function hasUsableAreaCoordinates(value: SessionUser['areaCoordinates']): boolean {
+  return Boolean(
+    value
+      && Number.isInteger(value.latE2)
+      && Number.isInteger(value.lngE2)
+      && value.latE2 >= -9000
+      && value.latE2 <= 9000
+      && value.lngE2 >= -18000
+      && value.lngE2 <= 18000,
+  );
 }
 
 function mapMessage(id: string, d: any): ChatMessage {
@@ -305,6 +324,7 @@ function publicProfileDoc(user: Omit<SessionUser, 'id'> | SessionUser) {
     name: user.name,
     role: user.role,
     workArea: user.workArea,
+    ...(user.areaCoordinates ? { areaCoordinates: user.areaCoordinates } : {}),
     categories: user.categories,
     priceRange: user.priceRange ?? '',
     companyInfo: user.companyInfo ?? '',
@@ -346,6 +366,8 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
   const [needsRole, setNeedsRole] = useState(false);
   const [ready, setReady] = useState(false);
   const [authBusy, setAuthBusy] = useState(false);
+  const [jobFitFilters, setJobFitFilters] = useState<JobFitFilters>(EMPTY_JOB_FIT_FILTERS);
+  const [jobFitFiltersOwnerId, setJobFitFiltersOwnerId] = useState<string | null>(null);
 
   const googleIntent = useRef<GoogleIntent | null>(null);
   const docWriteInFlight = useRef(false);
@@ -554,6 +576,49 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
     const { password: _pw, ...rest } = record;
     return rest;
   }, [mode, fbUser, demoDb]);
+
+  useEffect(() => {
+    if (!user || user.role !== 'provider') {
+      setJobFitFilters(EMPTY_JOB_FIT_FILTERS);
+      setJobFitFiltersOwnerId(null);
+      return;
+    }
+    setJobFitFilters(EMPTY_JOB_FIT_FILTERS);
+    setJobFitFiltersOwnerId(null);
+    let cancelled = false;
+    AsyncStorage.getItem(`@service-app-job-fit:${user.id}`)
+      .then((saved) => {
+        if (cancelled) return;
+        if (saved) {
+          const parsed = JSON.parse(saved) as Partial<JobFitFilters>;
+          setJobFitFilters({
+            category: typeof parsed.category === 'string' ? parsed.category : null,
+            maxDistanceMiles:
+              hasUsableAreaCoordinates(user.areaCoordinates) && typeof parsed.maxDistanceMiles === 'number'
+                ? parsed.maxDistanceMiles
+                : null,
+            workTimeFit: parsed.workTimeFit === true,
+            criteria: parsed.criteria && typeof parsed.criteria === 'object' ? parsed.criteria : {},
+          });
+        } else {
+          setJobFitFilters(EMPTY_JOB_FIT_FILTERS);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setJobFitFilters(EMPTY_JOB_FIT_FILTERS);
+      })
+      .finally(() => {
+        if (!cancelled) setJobFitFiltersOwnerId(user.id);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, user?.role, user?.areaCoordinates?.latE2, user?.areaCoordinates?.lngE2]);
+
+  useEffect(() => {
+    if (!user || user.role !== 'provider' || jobFitFiltersOwnerId !== user.id) return;
+    AsyncStorage.setItem(`@service-app-job-fit:${user.id}`, JSON.stringify(jobFitFilters)).catch(() => undefined);
+  }, [jobFitFilters, jobFitFiltersOwnerId, user?.id, user?.role]);
 
   const jobs: Job[] = useMemo(() => {
     const list = mode === 'firebase'
@@ -1956,6 +2021,9 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
     if (patch.notifyQuotes !== undefined) clean.notifyQuotes = patch.notifyQuotes;
     if (patch.availableForWork !== undefined) clean.availableForWork = patch.availableForWork;
     if (patch.availability !== undefined) clean.availability = patch.availability.trim();
+    if (patch.areaCoordinates !== undefined) {
+      clean.areaCoordinates = patch.areaCoordinates ?? deleteField();
+    }
 
     if (isProfileComplete(user)) {
       const proposed = { ...user, ...clean } as SessionUser;
@@ -1970,6 +2038,11 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
       updateDemo((d) => {
         const record = d.users[user.id];
         if (!record) return d;
+        if (patch.areaCoordinates === null) {
+          const { areaCoordinates: _removed, ...withoutCoordinates } = record;
+          const { areaCoordinates: _sentinel, ...otherChanges } = clean;
+          return { ...d, users: { ...d.users, [user.id]: { ...withoutCoordinates, ...otherChanges } } };
+        }
         return { ...d, users: { ...d.users, [user.id]: { ...record, ...clean } } };
       });
       return null;
@@ -1986,6 +2059,7 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
         'avatarUrl',
         'availableForWork',
         'availability',
+        'areaCoordinates',
       ]);
       const publicChanges = Object.fromEntries(Object.entries(clean).filter(([key]) => publicKeys.has(key)));
       const batch = writeBatch(db);
@@ -2030,6 +2104,9 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
       hasPasswordAuth,
       needsRole,
       jobs,
+      jobFitFilters,
+      setJobFitFilters,
+      clearJobFitFilters: () => setJobFitFilters(EMPTY_JOB_FIT_FILTERS),
       chats,
       notifications,
       unreadNotificationCount,
@@ -2074,7 +2151,7 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
       saveAvatar,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [mode, ready, authBusy, user, needsRole, jobs, chats, notifications, unreadNotificationCount, unreadMessageCount, demoDb, fbNotifs],
+    [mode, ready, authBusy, user, needsRole, jobs, jobFitFilters, chats, notifications, unreadNotificationCount, unreadMessageCount, demoDb, fbNotifs],
   );
 
   return <ServiceAppContext.Provider value={value}>{children}</ServiceAppContext.Provider>;

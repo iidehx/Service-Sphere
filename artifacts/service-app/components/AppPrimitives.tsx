@@ -85,11 +85,13 @@ export function SectionTitle({ title, action, onAction }: { title: string; actio
 export function Pill({
   label,
   active = false,
+  disabled = false,
   onPress,
   icon,
 }: {
   label: string;
   active?: boolean;
+  disabled?: boolean;
   onPress?: () => void;
   icon?: keyof typeof Ionicons.glyphMap;
 }) {
@@ -97,12 +99,16 @@ export function Pill({
   return (
     <Pressable
       onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ selected: active, disabled }}
       style={({ pressed }) => [
         styles.pill,
         {
           backgroundColor: active ? colors.primary : colors.card,
           borderColor: active ? colors.primary : colors.border,
-          opacity: pressed ? 0.75 : 1,
+          opacity: disabled ? 0.5 : pressed ? 0.75 : 1,
         },
       ]}
     >

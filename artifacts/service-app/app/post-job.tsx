@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { ActivityIndicator, Linking, Modal, Platform, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
@@ -8,6 +8,8 @@ import { Card, Field, HeaderBar, PrimaryButton, Screen } from '@/components/AppP
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { CATEGORIES, CATEGORY_ICONS, isValidCoarseLocation, MAX_JOB_PHOTOS, MAX_SPECIAL_REQUIREMENTS_LENGTH, useServiceApp } from '@/context/ServiceAppContext';
 import { useColors } from '@/hooks/useColors';
+import { AreaCoordinates } from '@/context/types';
+import { captureCoarseAreaLocation } from '@/lib/coarseAreaLocation';
 
 const TIME_OPTIONS = [
   { hour: 8, label: '8:00 AM' },
@@ -49,6 +51,9 @@ export default function PostJobScreen() {
   const [details, setDetails] = useState('');
   const [specialRequirements, setSpecialRequirements] = useState('');
   const [location, setLocation] = useState('');
+  const [areaCoordinates, setAreaCoordinates] = useState<AreaCoordinates | undefined>();
+  const [locationBusy, setLocationBusy] = useState(false);
+  const [locationNeedsSettings, setLocationNeedsSettings] = useState(false);
   const [exactAddress, setExactAddress] = useState('');
   const [price, setPrice] = useState('');
   const [beforePhotos, setBeforePhotos] = useState<string[]>([]);
@@ -83,6 +88,25 @@ export default function PostJobScreen() {
   };
 
   const removeBeforePhoto = (uri: string) => setBeforePhotos((prev) => prev.filter((u) => u !== uri));
+
+  const setCurrentJobArea = async () => {
+    setLocationBusy(true);
+    setErrors((current) => ({ ...current, areaCoordinates: '' }));
+    try {
+      const result = await captureCoarseAreaLocation();
+      if ('error' in result) {
+        setErrors((current) => ({ ...current, areaCoordinates: result.error }));
+        setLocationNeedsSettings(result.needsSettings);
+      } else {
+        setAreaCoordinates(result.coordinates);
+        setLocationNeedsSettings(false);
+      }
+    } catch {
+      setErrors((current) => ({ ...current, areaCoordinates: 'Your current area could not be read. Check location access and try again.' }));
+    } finally {
+      setLocationBusy(false);
+    }
+  };
 
   const submit = async () => {
     const next: Record<string, string> = {};
@@ -122,6 +146,7 @@ export default function PostJobScreen() {
         priceOffer: Math.round(priceNum * 100) / 100,
         scheduledAt: flexible ? 'Flexible — provider suggests a time' : (schedule as Date).toISOString(),
         location: trimmedLocation,
+        ...(areaCoordinates ? { areaCoordinates } : {}),
         leaveTimeToEmployee: flexible,
       });
       if (res.error || !res.jobId) {
@@ -262,7 +287,10 @@ export default function PostJobScreen() {
             icon="location-outline"
             placeholder="e.g. 'North Austin' or '78704'"
             value={location}
-            onChangeText={setLocation}
+            onChangeText={(value) => {
+              setLocation(value);
+              setAreaCoordinates(undefined);
+            }}
             error={errors.location}
             testID="input-location"
           />
@@ -270,6 +298,25 @@ export default function PostJobScreen() {
             A ZIP code or a plain neighborhood/area name only — no house number or street. This is shown to every provider
             browsing open jobs, so it can never be a full address.
           </Text>
+          <Pressable
+            testID="set-current-job-area"
+            accessibilityRole="button"
+            accessibilityLabel="Use current area for provider distance matching"
+            disabled={locationBusy}
+            onPress={locationNeedsSettings && Platform.OS !== 'web' ? () => Linking.openSettings() : setCurrentJobArea}
+            style={[styles.areaButton, { borderColor: areaCoordinates ? colors.success : colors.border, backgroundColor: colors.card }]}
+          >
+            {locationBusy
+              ? <ActivityIndicator size="small" color={colors.primary} />
+              : <Ionicons name={locationNeedsSettings ? 'settings-outline' : areaCoordinates ? 'checkmark-circle-outline' : 'locate-outline'} size={18} color={areaCoordinates ? colors.success : colors.primary} />}
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.switchTitle, { color: colors.foreground }]}>
+                {locationNeedsSettings ? 'Open location settings' : areaCoordinates ? 'Distance matching enabled' : 'Use current area for distance matching'}
+              </Text>
+              <Text style={[styles.switchBody, { color: colors.mutedForeground }]}>Only a rounded area is stored publicly.</Text>
+            </View>
+          </Pressable>
+          {errors.areaCoordinates ? <Text style={[styles.error, { color: colors.destructive }]}>{errors.areaCoordinates}</Text> : null}
           <Field
             label="Exact address (optional)"
             icon="pin-outline"
@@ -544,6 +591,7 @@ const styles = StyleSheet.create({
   scheduleValue: { fontFamily: 'Inter_400Regular', fontSize: 14, flex: 1 },
   feeNote: { flexDirection: 'row', gap: 8, padding: 12, borderRadius: 10, alignItems: 'flex-start' },
   feeText: { fontFamily: 'Inter_500Medium', fontSize: 12.5, lineHeight: 18, flex: 1 },
+  areaButton: { minHeight: 54, borderWidth: 1, borderRadius: 10, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30 },
   notAllowed: { fontFamily: 'Inter_500Medium', fontSize: 14 },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.48)', justifyContent: 'center', padding: 20 },

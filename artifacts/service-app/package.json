@@ -9,7 +9,8 @@
     "serve": "node server/serve.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:rules": "firebase emulators:exec --only firestore --project service-app-rules --config firebase.json \"node --test tests/firestore.rules.test.mjs\"",
-    "test:password": "node --experimental-strip-types --test tests/passwordPolicy.test.mjs"
+    "test:password": "node --experimental-strip-types --test tests/passwordPolicy.test.mjs",
+    "test:job-fit": "node --experimental-strip-types --test tests/jobFit.test.mjs"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
