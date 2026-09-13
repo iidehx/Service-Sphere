@@ -336,7 +336,11 @@ export function isValidEmail(email: string): boolean {
 // Demo mode seed data (used when Firebase env vars are not configured)
 // ---------------------------------------------------------------------------
 
-export type DemoUserRecord = SessionUser & { password?: string };
+export type DemoUserRecord = SessionUser & {
+  password?: string;
+  passwordSalt?: string;
+  passwordVerifier?: string;
+};
 
 export type DemoDb = {
   users: Record<string, DemoUserRecord>;

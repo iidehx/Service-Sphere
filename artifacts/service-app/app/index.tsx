@@ -9,6 +9,7 @@ import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollV
 import { GoogleIntent, isValidEmail, Role, useServiceApp } from '@/context/ServiceAppContext';
 import { useColors } from '@/hooks/useColors';
 import { googleWebClientId } from '@/lib/firebase';
+import { validatePassword } from '@/lib/passwordPolicy';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -83,6 +84,7 @@ export default function AuthScreen() {
   const [busy, setBusy] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const intentRef = useRef<GoogleIntent>('login');
+  const passwordValidation = validatePassword(password);
 
   // Native only: expo-auth-session Google flow.
   // On web we use Firebase signInWithPopup instead (no redirect URI config needed).
@@ -160,7 +162,11 @@ export default function AuthScreen() {
 
     if (formMode === 'register' && name.trim().length < 2) next.name = 'Name must be at least 2 characters.';
     if (!isValidEmail(email)) next.email = 'Enter a valid email address.';
-    if (password.length < 6) next.password = 'Password must be at least 6 characters.';
+    if (formMode === 'register' && !passwordValidation.isValid) {
+      next.password = passwordValidation.message ?? 'Password does not meet the requirements.';
+    } else if (formMode === 'login' && password.length < 6) {
+      next.password = 'Enter your password.';
+    }
     if (Object.keys(next).length) return setErrors(next);
 
     setBusy(true);
@@ -277,7 +283,7 @@ export default function AuthScreen() {
               <Field
                 label="Password"
                 icon="lock-closed-outline"
-                placeholder="At least 6 characters"
+                placeholder={formMode === 'register' ? 'Create a strong password' : 'Enter your password'}
                 value={password}
                 onChangeText={setPassword}
                 error={errors.password}
@@ -288,6 +294,37 @@ export default function AuthScreen() {
               <Pressable style={styles.eye} hitSlop={10} onPress={() => setShowPassword((s) => !s)}>
                 <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={19} color={colors.mutedForeground} />
               </Pressable>
+              {formMode === 'register' ? (
+                <View
+                  style={styles.passwordRequirements}
+                  accessibilityLiveRegion="polite"
+                  accessibilityLabel={
+                    passwordValidation.isValid
+                      ? 'All password requirements met'
+                      : `Password requirements not met: ${passwordValidation.unmetRequirements
+                          .map(({ label }) => label)
+                          .join(', ')}`
+                  }
+                >
+                  {passwordValidation.requirements.map((requirement) => (
+                    <View key={requirement.key} style={styles.passwordRequirement}>
+                      <Ionicons
+                        name={requirement.met ? 'checkmark-circle' : 'ellipse-outline'}
+                        size={16}
+                        color={requirement.met ? colors.success : colors.mutedForeground}
+                      />
+                      <Text
+                        style={[
+                          styles.passwordRequirementText,
+                          { color: requirement.met ? colors.success : colors.mutedForeground },
+                        ]}
+                      >
+                        {requirement.label}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
             </View>
           ) : null}
 
@@ -305,6 +342,7 @@ export default function AuthScreen() {
             label={formMode === 'login' ? 'Log in' : formMode === 'register' ? 'Create account' : 'Send reset email'}
             testID="submit-auth"
             loading={busy || authBusy}
+            disabled={formMode === 'register' && !passwordValidation.isValid}
             onPress={submit}
           />
 
@@ -353,6 +391,9 @@ const styles = StyleSheet.create({
   form: { gap: 14 },
   fieldLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
   eye: { position: 'absolute', right: 14, top: 40 },
+  passwordRequirements: { gap: 5, marginTop: 8 },
+  passwordRequirement: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  passwordRequirementText: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 17 },
   roleRow: { flexDirection: 'row', gap: 10 },
   roleCard: { flex: 1, borderWidth: 1.5, borderRadius: 12, padding: 13, gap: 6 },
   roleIcon: { width: 32, height: 32, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },

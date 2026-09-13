@@ -36,6 +36,8 @@ import {
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import { EMAIL_VERIFICATION_REQUIRED, getFirebase, isFirebaseConfigured } from '@/lib/firebase';
+import { createDemoPasswordCredential, verifyDemoPassword } from '@/lib/demoPassword';
+import { mapPasswordAuthError, validatePassword } from '@/lib/passwordPolicy';
 import {
   AppNotification,
   Chat,
@@ -261,7 +263,8 @@ function friendlyError(e: any): string {
   if (code.includes('invalid-credential') || code.includes('wrong-password') || code.includes('user-not-found'))
     return 'Incorrect email or password.';
   if (code.includes('invalid-email')) return 'That email address looks invalid.';
-  if (code.includes('weak-password')) return 'Password must be at least 6 characters.';
+  const passwordError = mapPasswordAuthError(e);
+  if (passwordError) return passwordError;
   if (code.includes('operation-not-allowed')) return 'Email sign-up is not enabled yet. Please contact the app administrator.';
   if (code.includes('quota-exceeded')) return 'Email delivery is temporarily unavailable. Please try again later.';
   if (code.includes('too-many-requests')) return 'Too many attempts. Please wait a few minutes and try again.';
@@ -668,12 +671,14 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
     const cleanName = name.trim();
     const cleanEmail = email.trim().toLowerCase();
     if (cleanName.length < 2) return 'Please enter your full name (at least 2 characters).';
-    if (password.length < 6) return 'Password must be at least 6 characters.';
+    const passwordValidation = validatePassword(password);
+    if (!passwordValidation.isValid) return passwordValidation.message;
 
     if (mode === 'demo') {
       const exists = Object.values(demoDb?.users ?? {}).some((u) => u.email.toLowerCase() === cleanEmail);
       if (exists) return 'An account with this email already exists.';
       const id = rid('user');
+      const passwordCredential = createDemoPasswordCredential(password);
       updateDemo((d) => ({
         ...d,
         users: {
@@ -681,7 +686,7 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
           [id]: {
             ...newUserDoc(cleanName, cleanEmail, role),
             id,
-            password,
+            ...passwordCredential,
           },
         },
         sessionUserId: id,
@@ -715,7 +720,7 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
     const cleanEmail = email.trim().toLowerCase();
     if (mode === 'demo') {
       const record = Object.values(demoDb?.users ?? {}).find((u) => u.email.toLowerCase() === cleanEmail);
-      if (!record || (record.password && record.password !== password)) return 'Incorrect email or password.';
+      if (!record || !verifyDemoPassword(password, record)) return 'Incorrect email or password.';
       updateDemo((d) => ({ ...d, sessionUserId: record.id }));
       return null;
     }
