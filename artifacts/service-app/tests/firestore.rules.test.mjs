@@ -79,6 +79,7 @@ const job = (overrides = {}) => ({
   scheduledAt: '2026-09-01T10:00:00.000Z',
   location: 'North Austin',
   leaveTimeToEmployee: false,
+  emergency: false,
   employerId: 'employer',
   employerName: 'Emma Employer',
   status: 'open',
@@ -234,6 +235,24 @@ test('private profiles are owner-only while public profiles are discoverable', a
   await assertFails(deleteDoc(doc(employer, 'users/employer')));
   await assertFails(deleteDoc(doc(provider, 'publicProfiles/employer')));
   await assertFails(deleteDoc(doc(provider, 'users/employer')));
+});
+
+test('providers can atomically opt into emergency matching with mirrored availability metadata', async () => {
+  await seed();
+  const provider = dbFor('provider');
+  const updatedAtMs = Date.now();
+  const batch = writeBatch(provider);
+  batch.update(doc(provider, 'users/provider'), {
+    emergencyOptIn: true,
+    availabilityUpdatedAtMs: updatedAtMs,
+    availabilityTimezoneOffsetMinutes: 300,
+  });
+  batch.update(doc(provider, 'publicProfiles/provider'), {
+    emergencyOptIn: true,
+    availabilityUpdatedAtMs: updatedAtMs,
+    availabilityTimezoneOffsetMinutes: 300,
+  });
+  await assertSucceeds(batch.commit());
 });
 
 test('unverified accounts can use marketplace data while email verification is disabled', async () => {
@@ -781,6 +800,37 @@ test('providers can claim open work but cannot alter ownership or unrelated job 
   await assertFails(updateDoc(doc(other, 'jobs/open-job'), { title: 'Stolen job title' }));
   await assertFails(updateDoc(doc(provider, 'jobs/accepted-job'), { employerId: 'provider' }));
   await assertFails(updateDoc(doc(provider, 'jobs/accepted-job'), { paymentStatus: 'paid' }));
+});
+
+test('emergency jobs are hidden from other providers and cannot be claimed through the normal path', async () => {
+  await seed();
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'jobs/emergency-job'), job({
+      emergency: true,
+      status: 'emergency_pending',
+      areaCoordinates: { latE2: 3027, lngE2: -9774 },
+      emergencyRequestedProviderId: 'provider',
+      emergencyRequestStatus: 'pending',
+      emergencyRequestExpiresAtMs: Date.now() + 60_000,
+    }));
+  });
+  const selected = dbFor('provider');
+  const other = dbFor('other');
+  await assertSucceeds(getDoc(doc(selected, 'jobs/emergency-job')));
+  const selectedQuery = query(
+    collection(selected, 'jobs'),
+    where('emergencyRequestedProviderId', '==', 'provider'),
+    where('emergencyRequestStatus', '==', 'pending'),
+  );
+  const selectedResults = await assertSucceeds(getDocs(selectedQuery));
+  assert.equal(selectedResults.size, 1);
+  await assertFails(getDoc(doc(other, 'jobs/emergency-job')));
+  await assertFails(updateDoc(doc(selected, 'jobs/emergency-job'), {
+    employeeId: 'provider',
+    employeeName: 'Pat Provider',
+    status: 'negotiating',
+  }));
 });
 
 test('employers can update payment and complete an accepted assigned job', async () => {

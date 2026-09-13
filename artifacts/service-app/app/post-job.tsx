@@ -42,7 +42,7 @@ export default function PostJobScreen() {
   const colors = useColors();
   const router = useRouter();
   const params = useLocalSearchParams<{ category?: string }>();
-  const { addJob, setJobExactAddress, addBeforePhotos, user } = useServiceApp();
+  const { addJob, setJobExactAddress, addBeforePhotos, requestEmergencyMatch, user } = useServiceApp();
 
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState<string | null>(
@@ -60,6 +60,7 @@ export default function PostJobScreen() {
   const [photoBusy, setPhotoBusy] = useState(false);
   const [schedule, setSchedule] = useState<Date | null>(null);
   const [flexible, setFlexible] = useState(false);
+  const [emergency, setEmergency] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(() => atStartOfDay(new Date()));
   const [calendarSelection, setCalendarSelection] = useState(() => defaultScheduleDate());
@@ -129,6 +130,7 @@ export default function PostJobScreen() {
       if (!price || Number.isNaN(priceNum) || priceNum <= 0) next.price = 'Enter your price offer in dollars.';
       if (!flexible && !schedule) next.schedule = 'Choose a date and time, or let the provider suggest a time.';
       if (!flexible && schedule && schedule.getTime() <= Date.now()) next.schedule = 'Choose a time in the future.';
+      if (emergency && !areaCoordinates) next.areaCoordinates = 'Emergency matching needs your rounded current area.';
     }
     if (exactAddress.trim().length > 200) next.exactAddress = 'Keep the exact address under 200 characters.';
     else if (exactAddress.trim() && exactAddress.trim().length < 3) next.exactAddress = 'Add a full address, or leave this blank.';
@@ -148,6 +150,7 @@ export default function PostJobScreen() {
         location: trimmedLocation,
         ...(areaCoordinates ? { areaCoordinates } : {}),
         leaveTimeToEmployee: flexible,
+        emergency,
       });
       if (res.error || !res.jobId) {
         setBusy(false);
@@ -178,6 +181,14 @@ export default function PostJobScreen() {
         return;
       }
       setPhotosSaved(true);
+    }
+    if (emergency) {
+      const matchError = await requestEmergencyMatch(jobId);
+      if (matchError) {
+        setBusy(false);
+        setErrors({ form: matchError });
+        return;
+      }
     }
     setBusy(false);
     router.back();
@@ -225,6 +236,26 @@ export default function PostJobScreen() {
       <HeaderBar title="Post a job" subtitle="Describe the work and set your offer" onBack={() => router.back()} />
       <KeyboardAwareScrollViewCompat contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <Text style={[styles.label, { color: colors.mutedForeground }]}>Category</Text>
+        <Card style={{ gap: 10, marginBottom: 16 }}>
+          <View style={styles.switchRow}>
+            <View style={{ flex: 1, gap: 3 }}>
+              <Text style={[styles.switchTitle, { color: colors.foreground }]}>Emergency request</Text>
+              <Text style={[styles.switchBody, { color: colors.mutedForeground }]}>
+                Sends one nearby opted-in provider a timed request. It is not for medical, fire, police, or other public-safety emergencies.
+              </Text>
+            </View>
+            <Switch
+              testID="switch-emergency"
+              value={emergency}
+              onValueChange={(value) => {
+                setEmergency(value);
+                if (value) setFlexible(false);
+              }}
+              trackColor={{ true: colors.destructive, false: colors.muted }}
+              thumbColor="#fff"
+            />
+          </View>
+        </Card>
         <View style={styles.grid}>
           {CATEGORIES.map((c) => {
             const active = category === c;
@@ -384,6 +415,7 @@ export default function PostJobScreen() {
               <Switch
                 value={flexible}
                 onValueChange={setFlexible}
+                disabled={emergency}
                 trackColor={{ true: colors.primary, false: colors.muted }}
                 thumbColor="#fff"
                 testID="switch-flexible"
@@ -424,7 +456,7 @@ export default function PostJobScreen() {
           </View>
 
           {errors.form ? <Text style={[styles.error, { color: colors.destructive }]}>{errors.form}</Text> : null}
-          <PrimaryButton label="Post job" icon="paper-plane-outline" onPress={submit} loading={busy} testID="submit-job" />
+          <PrimaryButton label={emergency ? 'Post & find one provider' : 'Post job'} icon="paper-plane-outline" onPress={submit} loading={busy} testID="submit-job" />
         </View>
       </KeyboardAwareScrollViewCompat>
 

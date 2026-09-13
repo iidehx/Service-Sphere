@@ -227,6 +227,7 @@ export function StatusBadge({ status }: { status: JobStatus | string }) {
   const colors = useColors();
   const map: Record<string, { label: string; bg: string; fg: string }> = {
     open: { label: 'Open', bg: colors.primarySoft, fg: colors.primary },
+    emergency_pending: { label: 'Emergency request', bg: colors.destructiveSoft, fg: colors.destructive },
     negotiating: { label: 'Negotiating', bg: colors.warningSoft, fg: colors.warning },
     accepted: { label: 'Confirmed', bg: colors.successSoft, fg: colors.success },
     completed: { label: 'Completed', bg: colors.secondary, fg: colors.mutedForeground },

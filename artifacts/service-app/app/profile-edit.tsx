@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Linking, Platform, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
@@ -24,6 +24,7 @@ export default function ProfileEditScreen() {
   const [companyInfo, setCompanyInfo] = useState(user?.companyInfo ?? '');
   const [categories, setCategories] = useState<string[]>(user?.categories ?? []);
   const [availableForWork, setAvailableForWork] = useState<boolean>(user?.availableForWork ?? true);
+  const [emergencyOptIn, setEmergencyOptIn] = useState<boolean>(user?.emergencyOptIn ?? false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [avatarBusy, setAvatarBusy] = useState(false);
@@ -79,7 +80,7 @@ export default function ProfileEditScreen() {
     setError('');
     const patch = isEmployer
       ? { name: name.trim(), workArea: workArea.trim(), availability: availability.trim(), bio: bio.trim(), companyInfo: companyInfo.trim() }
-      : { name: name.trim(), workArea: workArea.trim(), areaCoordinates, availability: availability.trim(), bio: bio.trim(), priceRange: priceRange.trim(), categories, availableForWork };
+      : { name: name.trim(), workArea: workArea.trim(), areaCoordinates, availability: availability.trim(), bio: bio.trim(), priceRange: priceRange.trim(), categories, availableForWork, emergencyOptIn };
     const err = await updateProfile(patch);
     setBusy(false);
     if (err) {
@@ -250,6 +251,20 @@ export default function ProfileEditScreen() {
                   />
                 </View>
               </Pressable>
+              <Pressable
+                testID="toggle-emergency-opt-in"
+                accessibilityRole="switch"
+                accessibilityState={{ checked: emergencyOptIn }}
+                onPress={() => setEmergencyOptIn((value) => !value)}
+                style={[styles.emergencyCard, { borderColor: emergencyOptIn ? colors.destructive : colors.border, backgroundColor: colors.card }]}
+              >
+                <Ionicons name="flash-outline" size={18} color={emergencyOptIn ? colors.destructive : colors.mutedForeground} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.availLabel, { color: colors.foreground }]}>Receive nearby emergency requests</Text>
+                  <Text style={[styles.availHint, { color: colors.mutedForeground }]}>One direct, expiring request at a time. Your rounded service area is used for distance.</Text>
+                </View>
+                <Switch value={emergencyOptIn} onValueChange={setEmergencyOptIn} />
+              </Pressable>
             </>
           )}
 
@@ -286,6 +301,7 @@ const styles = StyleSheet.create({
   availDot: { width: 10, height: 10, borderRadius: 5 },
   availLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
   availHint: { fontFamily: 'Inter_400Regular', fontSize: 12, marginTop: 2 },
+  emergencyCard: { width: '100%', flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: 12, padding: 12 },
   locationCard: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   locationButton: { minHeight: 42, borderWidth: 1, borderRadius: 9, paddingHorizontal: 11, flexDirection: 'row', alignItems: 'center', gap: 6 },
   locationButtonText: { fontFamily: 'Inter_600SemiBold', fontSize: 12.5 },

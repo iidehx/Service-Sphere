@@ -56,7 +56,7 @@ export default function JobsScreen() {
     if (!user) return [];
     if (isEmployer) {
       const mine = jobs.filter((j) => j.employerId === user.id);
-      if (segment === 'open') return mine.filter((j) => j.status === 'open');
+      if (segment === 'open') return mine.filter((j) => j.status === 'open' || j.status === 'emergency_pending');
       if (segment === 'active') return mine.filter((j) => j.status === 'negotiating' || j.status === 'accepted');
       return mine.filter((j) => j.status === 'completed');
     }

@@ -4,9 +4,10 @@ import { Ionicons } from '@expo/vector-icons';
 export type IconName = ComponentProps<typeof Ionicons>['name'];
 
 export type Role = 'employer' | 'provider';
-export type JobStatus = 'open' | 'negotiating' | 'accepted' | 'completed';
+export type JobStatus = 'open' | 'emergency_pending' | 'negotiating' | 'accepted' | 'completed';
 export type PaymentStatus = 'pending' | 'paid' | 'refunded';
 export type NotificationKind = 'job' | 'quote' | 'payment' | 'review' | 'message' | 'system';
+export type EmergencyRequestStatus = 'pending' | 'accepted' | 'declined' | 'expired';
 export type MessageKind = 'text' | 'system' | 'quote';
 
 export type AreaCoordinates = {
@@ -152,6 +153,10 @@ export type Job = {
    */
   areaCoordinates?: AreaCoordinates;
   leaveTimeToEmployee: boolean;
+  emergency: boolean;
+  emergencyRequestStatus?: EmergencyRequestStatus | 'no_match';
+  emergencyRequestedProviderId?: string;
+  emergencyRequestExpiresAtMs?: number;
   proposedPrice?: number;
   quoteBreakdown?: QuoteBreakdown;
   quoteBy?: string;
@@ -217,6 +222,9 @@ export type PublicProfile = {
   recentReviews: Review[];
   verified?: boolean;
   availableForWork?: boolean;
+  emergencyOptIn?: boolean;
+  availabilityUpdatedAtMs?: number;
+  availabilityTimezoneOffsetMinutes?: number;
   availability?: string;
   createdAtMs: number;
 };
@@ -614,6 +622,7 @@ export function makeSeedDb(): DemoDb {
       location: '78704',
       areaCoordinates: { latE2: 3024, lngE2: -9777 },
       leaveTimeToEmployee: false,
+      emergency: false,
       paymentStatus: 'pending',
       reviewedBy: [],
       createdAtMs: now - 5 * h,
@@ -633,6 +642,7 @@ export function makeSeedDb(): DemoDb {
       location: 'South Congress',
       areaCoordinates: { latE2: 3025, lngE2: -9777 },
       leaveTimeToEmployee: true,
+      emergency: false,
       paymentStatus: 'pending',
       reviewedBy: [],
       createdAtMs: now - 1 * d,
@@ -652,6 +662,7 @@ export function makeSeedDb(): DemoDb {
       scheduledAt: 'Tue, Aug 18 · 2:00 PM',
       location: 'Rainey Street District',
       leaveTimeToEmployee: false,
+      emergency: false,
       proposedPrice: 145,
       quoteBreakdown: { labor: 120, materials: 15, expectedHours: 2, extraFees: 10 },
       quoteBy: 'provider-1',
@@ -774,6 +785,9 @@ export function toPublicProfile(u: SessionUser | DemoUserRecord): PublicProfile 
     recentReviews: u.recentReviews,
     verified: u.verified,
     availableForWork: u.availableForWork,
+    emergencyOptIn: u.emergencyOptIn,
+    availabilityUpdatedAtMs: u.availabilityUpdatedAtMs,
+    availabilityTimezoneOffsetMinutes: u.availabilityTimezoneOffsetMinutes,
     availability: u.availability,
     createdAtMs: u.createdAtMs,
   };

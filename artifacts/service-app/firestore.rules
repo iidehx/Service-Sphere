@@ -77,7 +77,7 @@ service cloud.firestore {
           'companyInfo', 'bio', 'avatarUrl', 'ratingAvg', 'ratingCount',
           'recentReviews', 'savedJobIds', 'savedProviderIds', 'blockedUserIds',
           'notifyQuotes', 'verified', 'availableForWork', 'availability', 'areaCoordinates', 'createdAtMs',
-          'disabled'
+          'emergencyOptIn', 'availabilityUpdatedAtMs', 'availabilityTimezoneOffsetMinutes', 'disabled'
         ])
         && data.name is string && data.name.size() >= 2 && data.name.size() <= 120
         && data.email is string && data.email.size() <= 320
@@ -96,6 +96,13 @@ service cloud.firestore {
         && data.blockedUserIds is list && data.blockedUserIds.size() <= 500
         && data.notifyQuotes is bool && data.verified is bool
         && data.availableForWork is bool && data.availability is string && data.availability.size() <= 160
+        && (!data.keys().hasAny(['emergencyOptIn']) || data.emergencyOptIn is bool)
+        && (!data.keys().hasAny(['availabilityUpdatedAtMs']) || data.availabilityUpdatedAtMs is number)
+        && (!data.keys().hasAny(['availabilityTimezoneOffsetMinutes']) || (
+          data.availabilityTimezoneOffsetMinutes is int
+          && data.availabilityTimezoneOffsetMinutes >= -840
+          && data.availabilityTimezoneOffsetMinutes <= 840
+        ))
         && data.createdAtMs is number
         && validAreaCoordinates(data);
     }
@@ -122,7 +129,8 @@ service cloud.firestore {
         && data.keys().hasOnly([
           'name', 'role', 'workArea', 'categories', 'priceRange', 'companyInfo',
           'bio', 'avatarUrl', 'ratingAvg', 'ratingCount', 'recentReviews',
-          'verified', 'availableForWork', 'availability', 'areaCoordinates', 'createdAtMs'
+          'verified', 'availableForWork', 'availability', 'areaCoordinates', 'createdAtMs',
+          'emergencyOptIn', 'availabilityUpdatedAtMs', 'availabilityTimezoneOffsetMinutes'
         ])
         && data.name is string && data.name.size() >= 2 && data.name.size() <= 120
         && validRole(data.role)
@@ -136,6 +144,13 @@ service cloud.firestore {
         && data.ratingCount is int && data.ratingCount >= 0
         && data.recentReviews is list && data.recentReviews.size() <= 5
         && data.verified is bool && data.availableForWork is bool && data.availability is string && data.availability.size() <= 160
+        && (!data.keys().hasAny(['emergencyOptIn']) || data.emergencyOptIn is bool)
+        && (!data.keys().hasAny(['availabilityUpdatedAtMs']) || data.availabilityUpdatedAtMs is number)
+        && (!data.keys().hasAny(['availabilityTimezoneOffsetMinutes']) || (
+          data.availabilityTimezoneOffsetMinutes is int
+          && data.availabilityTimezoneOffsetMinutes >= -840
+          && data.availabilityTimezoneOffsetMinutes <= 840
+        ))
         && data.createdAtMs is number
         && validAreaCoordinates(data);
     }
@@ -162,6 +177,9 @@ service cloud.firestore {
         && request.resource.data.recentReviews == privateProfile.recentReviews
         && request.resource.data.verified == privateProfile.verified
         && request.resource.data.availableForWork == privateProfile.availableForWork
+        && request.resource.data.get('emergencyOptIn', false) == privateProfile.get('emergencyOptIn', false)
+        && request.resource.data.get('availabilityUpdatedAtMs', 0) == privateProfile.get('availabilityUpdatedAtMs', 0)
+        && request.resource.data.get('availabilityTimezoneOffsetMinutes', 0) == privateProfile.get('availabilityTimezoneOffsetMinutes', 0)
         && request.resource.data.availability == privateProfile.availability
         && request.resource.data.createdAtMs == privateProfile.createdAtMs;
     }
@@ -184,14 +202,14 @@ service cloud.firestore {
       return [
         'name', 'workArea', 'categories', 'priceRange', 'companyInfo', 'bio',
         'avatarUrl', 'savedJobIds', 'savedProviderIds', 'blockedUserIds',
-        'notifyQuotes', 'availableForWork', 'availability', 'areaCoordinates'
+        'notifyQuotes', 'availableForWork', 'emergencyOptIn', 'availabilityUpdatedAtMs', 'availabilityTimezoneOffsetMinutes', 'availability', 'areaCoordinates'
       ];
     }
 
     function publicEditableFields() {
       return [
         'name', 'workArea', 'categories', 'priceRange', 'companyInfo', 'bio',
-        'avatarUrl', 'availableForWork', 'availability', 'areaCoordinates'
+        'avatarUrl', 'availableForWork', 'emergencyOptIn', 'availabilityUpdatedAtMs', 'availabilityTimezoneOffsetMinutes', 'availability', 'areaCoordinates'
       ];
     }
 
@@ -254,13 +272,13 @@ service cloud.firestore {
     function validJobCreate() {
       return request.resource.data.keys().hasAll([
           'title', 'category', 'details', 'specialRequirements', 'priceOffer', 'scheduledAt', 'location',
-          'leaveTimeToEmployee', 'employerId', 'employerName', 'status',
+          'leaveTimeToEmployee', 'emergency', 'employerId', 'employerName', 'status',
           'paymentStatus', 'employerQuoteAccepted', 'employeeQuoteAccepted',
           'reviewedBy', 'createdAtMs'
         ])
         && request.resource.data.keys().hasOnly([
           'title', 'category', 'details', 'specialRequirements', 'priceOffer', 'scheduledAt', 'location',
-          'leaveTimeToEmployee', 'areaCoordinates', 'employerId', 'employerName',
+          'leaveTimeToEmployee', 'emergency', 'areaCoordinates', 'employerId', 'employerName',
           'status', 'paymentStatus', 'employerQuoteAccepted', 'employeeQuoteAccepted',
           'reviewedBy', 'createdAtMs'
         ])
@@ -274,9 +292,14 @@ service cloud.firestore {
         && validScheduleValue(request.resource.data.scheduledAt, request.resource.data.leaveTimeToEmployee)
         && validLocationValue(request.resource.data.location)
         && request.resource.data.leaveTimeToEmployee is bool
+        && request.resource.data.emergency is bool
+        && (!request.resource.data.emergency || (
+          request.resource.data.leaveTimeToEmployee == false
+          && request.resource.data.keys().hasAny(['areaCoordinates'])
+        ))
         && request.resource.data.employerId == request.auth.uid
         && request.resource.data.employerName == currentUserName()
-        && request.resource.data.status == 'open'
+        && request.resource.data.status == (request.resource.data.emergency ? 'emergency_pending' : 'open')
         && request.resource.data.paymentStatus == 'pending'
         && request.resource.data.employerQuoteAccepted == false
         && request.resource.data.employeeQuoteAccepted == false
@@ -313,6 +336,7 @@ service cloud.firestore {
 
     function isProviderClaim() {
       return isProvider()
+        && resource.data.get('emergency', false) == false
         && resource.data.status == 'open'
         && resource.data.get('employeeId', null) == null
         && request.resource.data.get('employeeId', null) == request.auth.uid
@@ -327,8 +351,8 @@ service cloud.firestore {
       // at all. Allow an edit that leaves that legacy gap untouched, but
       // require a well-formed value the moment anyone sets or changes it.
       return isJobEmployer()
-        && resource.data.status == 'open'
-        && request.resource.data.status == 'open'
+        && (resource.data.status == 'open' || resource.data.status == 'emergency_pending')
+        && request.resource.data.status == resource.data.status
         && validScheduleValue(request.resource.data.scheduledAt, request.resource.data.leaveTimeToEmployee)
         && validAreaCoordinates(request.resource.data)
         && (
@@ -475,7 +499,16 @@ service cloud.firestore {
       // safe without fetching unrelated documents — see
       // ServiceAppContext.tsx for the corresponding client queries.
       allow read: if isActive() && isComplete()
-        && (isJobEmployer() || (isProvider() && resource.data.status == 'open') || isJobProvider());
+        && (
+          isJobEmployer()
+          || (isProvider() && resource.data.status == 'open')
+          || (
+            isProvider()
+            && resource.data.get('emergencyRequestedProviderId', null) == request.auth.uid
+            && resource.data.get('emergencyRequestStatus', '') == 'pending'
+          )
+          || isJobProvider()
+        );
       allow create: if isActive() && isComplete() && isEmployer() && validJobCreate();
       allow update: if isActive() && isComplete() && (
         isProviderClaim()
@@ -487,7 +520,8 @@ service cloud.firestore {
         || validCompletion()
         || validReviewMarker(jobId)
       );
-      allow delete: if isActive() && isComplete() && isJobEmployer() && resource.data.status == 'open';
+      allow delete: if isActive() && isComplete() && isJobEmployer()
+        && (resource.data.status == 'open' || resource.data.status == 'emergency_pending');
 
       match /review/{reviewerId} {
         allow read: if isActive() && isComplete();
@@ -715,6 +749,12 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read'])
         && request.resource.data.read == true;
       allow delete: if isActive() && resource.data.userId == request.auth.uid;
+    }
+
+    // Emergency matching is owned by callable functions using Admin SDK.
+    // Clients receive only the job fields/notification needed for their role.
+    match /emergencyRequests/{jobId} {
+      allow read, write: if false;
     }
 
     match /reports/{reportId} {

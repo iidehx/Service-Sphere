@@ -99,6 +99,8 @@ export default function JobDetailScreen() {
     getJobPhotos,
     addAfterPhotos,
     updateJobSpecialRequirements,
+    respondToEmergencyRequest,
+    requestEmergencyMatch,
   } = useServiceApp();
 
   const job = useMemo(() => jobs.find((j) => j.id === id), [jobs, id]);
@@ -239,7 +241,7 @@ export default function JobDetailScreen() {
     );
   }
 
-  const statusIndex = job.status === 'open' ? 0 : job.status === 'negotiating' ? 1 : job.status === 'accepted' ? 2 : 3;
+  const statusIndex = job.status === 'open' || job.status === 'emergency_pending' ? 0 : job.status === 'negotiating' ? 1 : job.status === 'accepted' ? 2 : 3;
   const saved = user.savedJobIds.includes(job.id);
   const chatId = chatIdForJob(job.id);
   const hasChat = chats.some((c) => c.id === chatId);
@@ -248,6 +250,12 @@ export default function JobDetailScreen() {
   const otherAccepted = isEmployerOnJob ? job.employeeQuoteAccepted : job.employerQuoteAccepted;
   const otherName = isEmployerOnJob ? job.employeeName ?? 'the provider' : job.employerName;
   const canReview = job.status === 'completed' && isParticipant && !!job.employeeId && !job.reviewedBy.includes(user.id);
+  const emergencyStatus =
+    job.emergencyRequestStatus === 'pending'
+    && job.emergencyRequestExpiresAtMs
+    && job.emergencyRequestExpiresAtMs <= Date.now()
+      ? 'expired'
+      : job.emergencyRequestStatus;
 
   const run = async (fn: () => Promise<string | null>) => {
     setBusy(true);
@@ -264,6 +272,21 @@ export default function JobDetailScreen() {
     setBusy(false);
     if (res.error) setError(res.error);
     else if (res.chatId) router.push({ pathname: '/chat/[id]', params: { id: res.chatId } });
+  };
+  const respondEmergency = async (response: 'accept' | 'decline') => {
+    setBusy(true);
+    setError('');
+    const result = await respondToEmergencyRequest(job.id, response);
+    setBusy(false);
+    if (result.error) setError(result.error);
+    else if (result.chatId) router.push({ pathname: '/chat/[id]', params: { id: result.chatId } });
+  };
+  const retryEmergencyMatch = async () => {
+    setBusy(true);
+    setError('');
+    const result = await requestEmergencyMatch(job.id);
+    setBusy(false);
+    if (result) setError(result);
   };
 
   return (
@@ -283,6 +306,36 @@ export default function JobDetailScreen() {
         <Card style={{ gap: 12 }}>
           <Timeline statusIndex={statusIndex} />
         </Card>
+        {job.emergency ? (
+          <Card style={{ gap: 8, marginTop: 12, borderColor: colors.destructive }}>
+            <Text style={[styles.sectionLabelStrong, { color: colors.destructive }]}>Emergency job</Text>
+            <Text style={[styles.details, { color: colors.mutedForeground }]}>
+              This is a private, single-provider request—not an emergency service. Call local emergency services for threats to life or public safety.
+            </Text>
+            {emergencyStatus === 'pending' && job.emergencyRequestedProviderId === user.id ? (
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <PrimaryButton testID="accept-emergency-request" label="Accept request" onPress={() => respondEmergency('accept')} loading={busy} style={{ flex: 1 }} />
+                <GhostButton testID="decline-emergency-request" label="Decline" tone="destructive" onPress={() => respondEmergency('decline')} />
+              </View>
+            ) : null}
+            {isEmployerOnJob ? (
+              <Text style={[styles.hint, { color: colors.mutedForeground }]}>
+                {emergencyStatus === 'pending' ? 'Waiting for the selected provider to respond.' :
+                  emergencyStatus === 'no_match' ? 'No eligible provider was found. No request was broadcast.' :
+                  emergencyStatus ? `Request ${emergencyStatus}.` : 'Finding an eligible provider…'}
+              </Text>
+            ) : null}
+            {isEmployerOnJob && ['declined', 'expired', 'no_match'].includes(emergencyStatus ?? '') ? (
+              <PrimaryButton
+                testID="retry-emergency-match"
+                label="Find another provider"
+                icon="refresh-outline"
+                onPress={retryEmergencyMatch}
+                loading={busy}
+              />
+            ) : null}
+          </Card>
+        ) : null}
 
         <Card style={{ gap: 12, marginTop: 12 }}>
           <View style={styles.titleRow}>

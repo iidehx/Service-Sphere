@@ -75,13 +75,13 @@ export type GoogleIntent = 'login' | 'register';
 export type ProfilePatch = Partial<
   Pick<
     SessionUser,
-    'name' | 'workArea' | 'bio' | 'categories' | 'priceRange' | 'companyInfo' | 'avatarUrl' | 'notifyQuotes' | 'availableForWork' | 'availability'
+    'name' | 'workArea' | 'bio' | 'categories' | 'priceRange' | 'companyInfo' | 'avatarUrl' | 'notifyQuotes' | 'availableForWork' | 'emergencyOptIn' | 'availability'
   >
 > & { areaCoordinates?: SessionUser['areaCoordinates'] | null };
 
 export type NewJobInput = Pick<
   Job,
-  'title' | 'category' | 'details' | 'specialRequirements' | 'priceOffer' | 'scheduledAt' | 'location' | 'areaCoordinates' | 'leaveTimeToEmployee'
+  'title' | 'category' | 'details' | 'specialRequirements' | 'priceOffer' | 'scheduledAt' | 'location' | 'areaCoordinates' | 'leaveTimeToEmployee' | 'emergency'
 >;
 
 export type ReviewInput = {
@@ -135,6 +135,8 @@ type ServiceAppContextValue = {
   /** Assigned-provider-only, once accepted: uploads and appends "after" photos, capped at MAX_JOB_PHOTOS. */
   addAfterPhotos: (jobId: string, localUris: string[]) => Promise<string | null>;
   acceptJob: (jobId: string) => Promise<{ chatId?: string; error?: string }>;
+  requestEmergencyMatch: (jobId: string) => Promise<string | null>;
+  respondToEmergencyRequest: (jobId: string, response: 'accept' | 'decline') => Promise<{ chatId?: string; error?: string }>;
   toggleSaved: (jobId: string) => Promise<void>;
   toggleSavedProvider: (providerId: string) => Promise<void>;
   proposeQuote: (jobId: string, breakdown: QuoteBreakdown) => Promise<string | null>;
@@ -187,6 +189,9 @@ function mapUser(id: string, d: any): SessionUser {
     notifyQuotes: d?.notifyQuotes !== false,
     verified: Boolean(d?.verified),
     availableForWork: d?.availableForWork !== false,
+    emergencyOptIn: Boolean(d?.emergencyOptIn),
+    availabilityUpdatedAtMs: typeof d?.availabilityUpdatedAtMs === 'number' ? d.availabilityUpdatedAtMs : undefined,
+    availabilityTimezoneOffsetMinutes: typeof d?.availabilityTimezoneOffsetMinutes === 'number' ? d.availabilityTimezoneOffsetMinutes : undefined,
     availability: d?.availability ?? '',
     createdAtMs: typeof d?.createdAtMs === 'number' ? d.createdAtMs : Date.now(),
   };
@@ -204,13 +209,17 @@ function mapJob(id: string, d: any): Job {
     employerName: d?.employerName ?? 'Employer',
     employeeId: d?.employeeId ?? undefined,
     employeeName: d?.employeeName ?? undefined,
-    status: ['open', 'negotiating', 'accepted', 'completed'].includes(d?.status) ? d.status : 'open',
+    status: ['open', 'emergency_pending', 'negotiating', 'accepted', 'completed'].includes(d?.status) ? d.status : 'open',
     scheduledAt: d?.scheduledAt ?? '',
     // Legacy jobs created before this field existed have no location at all —
     // default to '' so every surface can safely treat it as "not provided".
     location: typeof d?.location === 'string' ? d.location : '',
     areaCoordinates: d?.areaCoordinates ?? undefined,
     leaveTimeToEmployee: Boolean(d?.leaveTimeToEmployee),
+    emergency: Boolean(d?.emergency),
+    emergencyRequestStatus: ['pending', 'accepted', 'declined', 'expired', 'no_match'].includes(d?.emergencyRequestStatus) ? d.emergencyRequestStatus : undefined,
+    emergencyRequestedProviderId: typeof d?.emergencyRequestedProviderId === 'string' ? d.emergencyRequestedProviderId : undefined,
+    emergencyRequestExpiresAtMs: typeof d?.emergencyRequestExpiresAtMs === 'number' ? d.emergencyRequestExpiresAtMs : undefined,
     proposedPrice: typeof d?.proposedPrice === 'number' ? d.proposedPrice : undefined,
     quoteBreakdown: d?.quoteBreakdown ?? undefined,
     quoteBy: d?.quoteBy ?? undefined,
@@ -314,6 +323,9 @@ function newUserDoc(name: string, email: string, role: Role) {
     notifyQuotes: true,
     verified: false,
     availableForWork: true,
+    emergencyOptIn: false,
+    availabilityUpdatedAtMs: Date.now(),
+    availabilityTimezoneOffsetMinutes: new Date().getTimezoneOffset(),
     availability: '',
     createdAtMs: Date.now(),
   };
@@ -335,6 +347,11 @@ function publicProfileDoc(user: Omit<SessionUser, 'id'> | SessionUser) {
     recentReviews: user.recentReviews,
     verified: Boolean(user.verified),
     availableForWork: user.availableForWork !== false,
+    emergencyOptIn: Boolean(user.emergencyOptIn),
+    ...(user.availabilityUpdatedAtMs !== undefined ? { availabilityUpdatedAtMs: user.availabilityUpdatedAtMs } : {}),
+    ...(user.availabilityTimezoneOffsetMinutes !== undefined
+      ? { availabilityTimezoneOffsetMinutes: user.availabilityTimezoneOffsetMinutes }
+      : {}),
     availability: user.availability ?? '',
     createdAtMs: user.createdAtMs,
   };
@@ -514,7 +531,8 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
     } else {
       const openJobs = new Map<string, Job>();
       const myJobs = new Map<string, Job>();
-      const publish = () => setFbJobs([...openJobs.values(), ...myJobs.values()].filter(
+      const requestedJobs = new Map<string, Job>();
+      const publish = () => setFbJobs([...openJobs.values(), ...myJobs.values(), ...requestedJobs.values()].filter(
         (j, i, arr) => arr.findIndex((other) => other.id === j.id) === i,
       ));
       unsubs.push(
@@ -532,6 +550,19 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
           (snap) => {
             myJobs.clear();
             snap.docs.forEach((d) => myJobs.set(d.id, mapJob(d.id, d.data())));
+            publish();
+          },
+          () => undefined,
+        ),
+        onSnapshot(
+          query(
+            collection(db, 'jobs'),
+            where('emergencyRequestedProviderId', '==', authUid),
+            where('emergencyRequestStatus', '==', 'pending'),
+          ),
+          (snap) => {
+            requestedJobs.clear();
+            snap.docs.forEach((d) => requestedJobs.set(d.id, mapJob(d.id, d.data())));
             publish();
           },
           () => undefined,
@@ -984,6 +1015,9 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
     if (input.specialRequirements.trim().length > MAX_SPECIAL_REQUIREMENTS_LENGTH) {
       return { error: `Keep special requirements under ${MAX_SPECIAL_REQUIREMENTS_LENGTH} characters.` };
     }
+    if (input.emergency && (input.leaveTimeToEmployee || !input.areaCoordinates)) {
+      return { error: 'Emergency requests need a specific future time and rounded area location.' };
+    }
     const payload = {
       ...input,
       title: input.title.trim(),
@@ -994,7 +1028,7 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
       location: input.location.trim(),
       employerId: user.id,
       employerName: user.name,
-      status: 'open' as const,
+      status: input.emergency ? 'emergency_pending' as const : 'open' as const,
       paymentStatus: 'pending' as const,
       employerQuoteAccepted: false,
       employeeQuoteAccepted: false,
@@ -1024,6 +1058,73 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
 
       const ref = await addDoc(collection(db, 'jobs'), payload);
       return { jobId: ref.id };
+    } catch (e) {
+      return { error: friendlyError(e) };
+    }
+  };
+
+  const requestEmergencyMatch = async (jobId: string) => {
+    if (!user || user.role !== 'employer') return 'Only the job owner can request emergency matching.';
+    if (mode === 'demo') {
+      updateDemo((d) => {
+        const job = d.jobs.find((item) => item.id === jobId);
+        if (!job || job.employerId !== user.id || !job.emergency) return d;
+        const when = new Date(job.scheduledAt);
+        const candidates = Object.values(d.users)
+          .filter((candidate) =>
+            candidate.role === 'provider'
+            && candidate.availableForWork === true
+            && candidate.emergencyOptIn === true
+            && Boolean(candidate.areaCoordinates)
+            && candidate.categories.includes(job.category)
+            && when.getTime() > Date.now())
+          .sort((a, b) => {
+            const da = Math.hypot(a.areaCoordinates!.latE2 - job.areaCoordinates!.latE2, a.areaCoordinates!.lngE2 - job.areaCoordinates!.lngE2);
+            const db = Math.hypot(b.areaCoordinates!.latE2 - job.areaCoordinates!.latE2, b.areaCoordinates!.lngE2 - job.areaCoordinates!.lngE2);
+            return da - db || a.id.localeCompare(b.id);
+          });
+        const selected = candidates[0];
+        const status = selected ? 'pending' as const : 'no_match' as const;
+        let next = { ...d, jobs: d.jobs.map((item) => item.id === jobId ? {
+          ...item,
+          emergencyRequestStatus: status,
+          ...(selected ? { emergencyRequestedProviderId: selected.id, emergencyRequestExpiresAtMs: Date.now() + 15 * 60_000 } : {}),
+        } : item) };
+        if (selected) {
+          next = demoNotify(next, selected.id, 'job', 'Emergency job request', `"${job.title}" needs help nearby. Accept or decline within 15 minutes.`, jobId);
+        }
+        return next;
+      });
+      return null;
+    }
+    try {
+      const { app } = getFirebase();
+      const callable = httpsCallable<{ jobId: string }, { matched: boolean }>(getFunctions(app), 'requestEmergencyMatch');
+      await callable({ jobId });
+      return null;
+    } catch (e) {
+      return friendlyError(e);
+    }
+  };
+
+  const respondToEmergencyRequest = async (jobId: string, response: 'accept' | 'decline') => {
+    if (!user || user.role !== 'provider') return { error: 'Only the requested provider can respond.' };
+    if (mode === 'demo') {
+      const job = jobs.find((item) => item.id === jobId);
+      if (!job || job.emergencyRequestedProviderId !== user.id || job.emergencyRequestStatus !== 'pending') {
+        return { error: 'This emergency request is no longer available.' };
+      }
+      if (response === 'decline') {
+        updateDemo((d) => ({ ...d, jobs: d.jobs.map((item) => item.id === jobId ? { ...item, emergencyRequestStatus: 'declined' } : item) }));
+        return {};
+      }
+      return acceptJob(jobId);
+    }
+    try {
+      const { app } = getFirebase();
+      const callable = httpsCallable<{ jobId: string; response: string }, { chatId?: string }>(getFunctions(app), 'respondToEmergencyRequest');
+      const result = await callable({ jobId, response });
+      return { chatId: result.data.chatId };
     } catch (e) {
       return { error: friendlyError(e) };
     }
@@ -1209,6 +1310,7 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
     const job = jobs.find((j) => j.id === jobId);
     if (!job) return { error: 'This job no longer exists.' };
     if (job.status !== 'open') return { error: 'This job was already taken by another provider.' };
+    if (job.emergency) return { error: 'Emergency jobs can only be accepted through the direct request.' };
     if (job.employerId === user.id) return { error: 'You cannot accept your own job.' };
 
     const chatId = chatIdForJob(jobId);
@@ -2020,7 +2122,17 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
     if (patch.avatarUrl !== undefined) clean.avatarUrl = patch.avatarUrl;
     if (patch.notifyQuotes !== undefined) clean.notifyQuotes = patch.notifyQuotes;
     if (patch.availableForWork !== undefined) clean.availableForWork = patch.availableForWork;
+    if (patch.emergencyOptIn !== undefined) clean.emergencyOptIn = patch.emergencyOptIn;
     if (patch.availability !== undefined) clean.availability = patch.availability.trim();
+    if (
+      patch.availableForWork !== undefined
+      || patch.emergencyOptIn !== undefined
+      || patch.availability !== undefined
+      || patch.areaCoordinates !== undefined
+    ) {
+      clean.availabilityUpdatedAtMs = Date.now();
+      clean.availabilityTimezoneOffsetMinutes = new Date().getTimezoneOffset();
+    }
     if (patch.areaCoordinates !== undefined) {
       clean.areaCoordinates = patch.areaCoordinates ?? deleteField();
     }
@@ -2058,6 +2170,9 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
         'companyInfo',
         'avatarUrl',
         'availableForWork',
+        'emergencyOptIn',
+        'availabilityUpdatedAtMs',
+        'availabilityTimezoneOffsetMinutes',
         'availability',
         'areaCoordinates',
       ]);
@@ -2130,6 +2245,8 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
       addBeforePhotos,
       addAfterPhotos,
       acceptJob,
+    requestEmergencyMatch,
+    respondToEmergencyRequest,
       toggleSaved,
       toggleSavedProvider,
       proposeQuote,

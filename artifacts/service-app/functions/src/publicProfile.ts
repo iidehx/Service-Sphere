@@ -9,6 +9,9 @@ export type PublicProfileProjection = {
   avatarUrl: string;
   verified: boolean;
   availableForWork: boolean;
+  emergencyOptIn?: boolean;
+  availabilityUpdatedAtMs?: number;
+  availabilityTimezoneOffsetMinutes?: number;
   availability: string;
   createdAtMs: number;
 };
@@ -54,6 +57,11 @@ export function publicProfileFromUser(
     avatarUrl: user.avatarUrl,
     verified: user.verified,
     availableForWork: user.availableForWork,
+    ...(typeof user.emergencyOptIn === "boolean" ? { emergencyOptIn: user.emergencyOptIn } : {}),
+    ...(typeof user.availabilityUpdatedAtMs === "number" ? { availabilityUpdatedAtMs: user.availabilityUpdatedAtMs } : {}),
+    ...(typeof user.availabilityTimezoneOffsetMinutes === "number"
+      ? { availabilityTimezoneOffsetMinutes: user.availabilityTimezoneOffsetMinutes }
+      : {}),
     availability,
     createdAtMs: user.createdAtMs,
   };

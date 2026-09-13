@@ -111,7 +111,7 @@ export default function HomeScreen() {
             </View>
 
             <View style={styles.statsRow}>
-              <StatCard icon="folder-open-outline" label="Open" value={String(myJobs.filter((j) => j.status === 'open' || j.status === 'negotiating').length)} />
+              <StatCard icon="folder-open-outline" label="Open" value={String(myJobs.filter((j) => j.status === 'open' || j.status === 'emergency_pending' || j.status === 'negotiating').length)} />
               <StatCard icon="checkmark-circle-outline" label="Confirmed" value={String(myJobs.filter((j) => j.status === 'accepted').length)} />
               <StatCard icon="ribbon-outline" label="Completed" value={String(myJobs.filter((j) => j.status === 'completed').length)} />
             </View>
