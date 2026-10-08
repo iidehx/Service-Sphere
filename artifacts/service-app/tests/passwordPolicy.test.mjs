@@ -15,8 +15,11 @@ test('accepts a password that meets every requirement', () => {
   assert.deepEqual(result.unmetRequirements, []);
 });
 
-test('accepts exactly 12 characters at the length boundary', () => {
-  assert.equal(validatePassword('Abcdefghi1!x').isValid, true);
+test('accepts exactly 8 characters at the length boundary and rejects 7', () => {
+  assert.equal(validatePassword('Abcdef1!').isValid, true);
+  const short = validatePassword('Abcde1!');
+  assert.equal(short.isValid, false);
+  assert.deepEqual(short.unmetRequirements.map(({ key }) => key), ['length']);
 });
 
 test('reports every unmet requirement without including the password', () => {

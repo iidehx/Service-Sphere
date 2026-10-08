@@ -13,12 +13,19 @@ export type PasswordValidation = {
   message: string | null;
 };
 
+// Keep in sync with Firebase Console → Authentication → Settings → Password policy.
+export const MIN_PASSWORD_LENGTH = 8;
+
 const PASSWORD_REQUIREMENTS: ReadonlyArray<{
   key: PasswordRequirementKey;
   label: string;
   test: (password: string) => boolean;
 }> = [
-  { key: 'length', label: 'At least 12 characters', test: (password) => password.length >= 12 },
+  {
+    key: 'length',
+    label: `At least ${MIN_PASSWORD_LENGTH} characters`,
+    test: (password) => password.length >= MIN_PASSWORD_LENGTH,
+  },
   { key: 'uppercase', label: 'One uppercase letter', test: (password) => /[A-Z]/.test(password) },
   { key: 'lowercase', label: 'One lowercase letter', test: (password) => /[a-z]/.test(password) },
   { key: 'number', label: 'One number', test: (password) => /[0-9]/.test(password) },
@@ -26,7 +33,7 @@ const PASSWORD_REQUIREMENTS: ReadonlyArray<{
 ];
 
 export const PASSWORD_POLICY_MESSAGE =
-  'Password must be at least 12 characters and include an uppercase letter, a lowercase letter, a number, and a symbol.';
+  `Password must be at least ${MIN_PASSWORD_LENGTH} characters and include an uppercase letter, a lowercase letter, a number, and a symbol.`;
 
 export function validatePassword(password: string): PasswordValidation {
   const requirements = PASSWORD_REQUIREMENTS.map((requirement) => ({
