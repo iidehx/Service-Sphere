@@ -104,6 +104,8 @@ Main Firestore collections and subcollections include:
 
 **Storage URL caveat:** `storage.rules` requires Firebase authentication to read paths, but the app obtains and stores Firebase `getDownloadURL()` URLs in the private Firestore photo document. Such download URLs are bearer links: anyone who obtains a URL may be able to fetch the image without passing the Storage read rule. Firestore rules restrict who learns the URL through the app; they do not make a leaked URL non-transferable. Reassess this if the product requires strict URL-level privacy (for example, store object paths and fetch authenticated media only after participant authorization).
 
+**Upload robustness caveat:** Photo additions read the current list, upload files, then replace that side's array with a merged list. There is no transaction protecting simultaneous additions from two devices, and files uploaded before a later upload/metadata failure are not cleaned up. Review concurrent append behavior and partial-failure cleanup before promising loss-free retries.
+
 ### Firebase Cloud Functions
 
 Source: `artifacts/service-app/functions/src/`. Firebase Admin SDK uses the deployed Functions runtime identity; do not add a service-account JSON file to the repository.
@@ -166,6 +168,16 @@ Other runtime configuration (not all are credentials):
 - `REPLIT_DEV_DOMAIN`, `REPLIT_EXPO_DEV_DOMAIN`, `REPL_ID`, `REPLIT_INTERNAL_APP_DOMAIN`, `NODE_ENV`, and `LOG_LEVEL` are runtime/platform values. Do not hardcode their current values.
 
 Firebase client configuration variables are compiled into the app bundle because of the `EXPO_PUBLIC_` prefix. They are client configuration, not Admin SDK credentials, but still transfer/configure them only through the proper environment mechanism. Never place Firebase Admin credentials, OAuth secrets, tokens, passwords, or database connection strings in `CLAUDE_HANDOFF.md`, `secrets`, source files, or chat.
+
+### Transfer checklist
+
+- Give Claude access to the complete repository, not just the Expo app folder; workspace libraries and the supporting API server are used by the app.
+- If continuing against the same live system, retain the existing Firebase project, Auth accounts, Firestore data, and Storage bucket. Cloning code does not migrate those services or their data.
+- The destination environment needs the listed variables configured securely, and an authorized human/runtime needs Firebase Console/CLI access for rules and Functions deployment.
+- Preserve Expo/EAS account/project access and signing/build configuration. A new checkout does not automatically inherit EAS permissions or signing credentials.
+- Point the API server at the correct existing Postgres database, or plan an explicit data migration if the hosting environment changes. Do not silently create a new DB and assume push tokens transferred.
+- Recheck web authorized domains, API host routing, and published URLs after changing hosting. Never confuse the Replit development domain with the published production URL.
+- Check whether the password-enforcement task is still running before editing its files.
 
 ## Current state and known blockers
 

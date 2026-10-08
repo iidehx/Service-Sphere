@@ -7,3 +7,4 @@
 - [Profile mirror schema changes](profile-mirror-schema-changes.md) — add profile fields to private/public batch writes together and keep trusted projection tolerant of legacy documents.
 - [Marketplace distance privacy](marketplace-distance-privacy.md) — browse distance uses coarse-area centroids only; exact job coordinates remain participant-only.
 - [Expiring direct dispatch](expiring-direct-dispatch.md) — gate reads by pending state; expire transactionally and reserve one recipient to prevent privacy and concurrency races.
+- [Firebase download URL privacy](firebase-download-url-privacy.md) — private Firestore metadata does not make tokenized Storage download links participant-only.

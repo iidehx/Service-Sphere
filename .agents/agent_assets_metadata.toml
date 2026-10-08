@@ -1,0 +1,16 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "TxtX-7WL64Jpljn6PZmUV"
+uri = "file://CLAUDE_HANDOFF.md"
+type = "text"
+title = "Claude handoff — Service Sphere"
+description = "Project structure, features, API interfaces, security decisions, open work, and secure transfer checklist. No credential values included."
+logical_id = "55b59694-9536-426d-9797-36edfd106b03"
+content_hash = "sha256:0bda543e7d5c128204cdb836e2a0f341fcc9c11211de6784ec0717ee732a97b2"
+size = 20778
+mtime_ms = 1791439345712
+storage_uri = "gcs://replit-rams-assets-sisko/rams/assets/repl:61a9cf3d-ff11-40cd-99c5-568e15641e3f/55b59694-9536-426d-9797-36edfd106b03/582c848d-d7ed-40ed-b73a-188c790a1b3d"
+storage_version_token = "1791439372448698"
+content_type = "text/markdown"
