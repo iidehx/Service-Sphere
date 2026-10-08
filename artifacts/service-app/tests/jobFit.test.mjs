@@ -33,7 +33,9 @@ const job = (overrides = {}) => ({
   employerId: 'employer',
   employerName: 'Employer',
   status: 'open',
-  scheduledAt: '2026-09-14T18:00:00.000Z',
+  // Local time (no `Z`): scheduleFit compares device-local hours, so a UTC
+  // timestamp would make results depend on the machine's timezone.
+  scheduledAt: '2026-09-14T18:00:00',
   location: 'Austin',
   leaveTimeToEmployee: false,
   paymentStatus: 'pending',

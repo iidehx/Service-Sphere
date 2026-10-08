@@ -34,7 +34,7 @@ A two-sided service marketplace mobile app built with Expo (React Native), Fireb
 
 | Layer | Technology |
 |---|---|
-| Mobile app | Expo (SDK 53), React Native |
+| Mobile app | Expo (SDK 54), React Native 0.81 |
 | Language | TypeScript |
 | Auth | Firebase Authentication |
 | Database | Cloud Firestore |
@@ -64,33 +64,38 @@ artifacts/
 ## Getting Started
 
 ### Prerequisites
-- Node.js 18+
-- pnpm
-- Expo CLI (`npm install -g expo`)
-- A Firebase project with Auth and Firestore enabled
+- Node.js 22+
+- pnpm 10 or 11
+- A Firebase project with Auth, Firestore and Storage enabled
+- Java 21+ (only for the Firestore rules emulator tests)
 
 ### Environment Variables
 
-Create the following secrets (Replit Secrets or `.env`):
+Copy `artifacts/service-app/.env.example` to `artifacts/service-app/.env` and fill in the
+Firebase web app config (Firebase Console → Project settings → Your apps). `.env` is
+git-ignored. With the Firebase values left empty, the app runs in local demo mode.
+Restart the dev server after changing `.env`.
 
-```
-EXPO_PUBLIC_FIREBASE_API_KEY
-EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN
-EXPO_PUBLIC_FIREBASE_PROJECT_ID
-EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET
-EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
-EXPO_PUBLIC_FIREBASE_APP_ID
-EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID
-```
-
-### Run locally
+### Run locally (Windows, macOS, Linux)
 
 ```bash
 pnpm install
 pnpm --filter @workspace/service-app run dev
 ```
 
-Scan the QR code with **Expo Go** (Android/iOS) or press `a` for Android emulator.
+Scan the QR code with **Expo Go** (Android/iOS), press `a` for an Android emulator, or
+press `w` for the browser (`run web` opens the browser directly). If Expo fails with
+`fetch failed` while starting, add `--offline`.
+
+### Tests
+
+```bash
+pnpm run typecheck
+pnpm --filter @workspace/service-app run test:password
+pnpm --filter @workspace/service-app run test:job-fit
+pnpm --filter @workspace/service-app-functions run test
+pnpm --filter @workspace/service-app run test:rules   # needs Java 21+
+```
 
 ---
 

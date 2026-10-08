@@ -24,6 +24,8 @@ android/
 
 # debug
 npm-debug.*
+firestore-debug.log
+firebase-debug.log
 yarn-debug.*
 yarn-error.*
 
