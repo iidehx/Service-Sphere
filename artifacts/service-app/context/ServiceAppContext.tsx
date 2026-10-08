@@ -1855,8 +1855,11 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
       // Per spec: employer's review of the provider → jobs/{id}/review/{reviewerId};
       // provider's review of the employer → jobs/{id}/employerReview/{reviewerId}.
       const sub = isEmployer ? 'review' : 'employerReview';
+      // The rules allow only the review fields; the document ID (the
+      // reviewer's uid) already identifies it, so the local `id` is not stored.
+      const { id: _localId, ...reviewDoc } = review;
       const batch = writeBatch(db);
-      batch.set(doc(db, 'jobs', jobId, sub, user.id), review);
+      batch.set(doc(db, 'jobs', jobId, sub, user.id), reviewDoc);
       batch.update(doc(db, 'jobs', jobId), { reviewedBy: arrayUnion(user.id) });
       await batch.commit();
       await fbNotify(targetUserId, 'review', 'New review received', `${user.name} rated you ${review.rating}★ on "${job.title}".`, jobId);
