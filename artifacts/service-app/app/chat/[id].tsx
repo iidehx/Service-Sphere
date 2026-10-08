@@ -9,6 +9,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import {
   ChatMessage,
   formatClock,
+  formatUsd,
   PLATFORM_FEE_RATE,
   round2,
   useChatMessages,
@@ -198,7 +199,7 @@ export default function ChatScreen() {
         {job && job.proposedPrice && job.status === 'negotiating' && isParticipant ? (
           <View style={[styles.quoteBanner, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={{ flex: 1, gap: 2 }}>
-              <Text style={[styles.quoteBannerTitle, { color: colors.foreground }]}>Quote on the table: ${job.proposedPrice}</Text>
+              <Text style={[styles.quoteBannerTitle, { color: colors.foreground }]}>Quote on the table: {formatUsd(job.proposedPrice)}</Text>
               <Text style={[styles.quoteBannerBody, { color: colors.mutedForeground }]} numberOfLines={1}>
                 {myAccepted ? `Waiting for ${otherName} to confirm` : 'Review the breakdown and confirm to book'}
               </Text>
@@ -280,10 +281,10 @@ export default function ChatScreen() {
               <Field label="Extra fees (USD)" icon="add-circle-outline" placeholder="e.g. 10" keyboardType="numeric" value={extra} onChangeText={setExtra} testID="quote-extra" />
               <View style={[styles.totalRow, { backgroundColor: colors.primarySoft }]}>
                 <Text style={[styles.totalLabel, { color: colors.primary }]}>Total quote</Text>
-                <Text style={[styles.totalValue, { color: colors.primary }]}>${quoteTotalNum}</Text>
+                <Text style={[styles.totalValue, { color: colors.primary }]}>{formatUsd(quoteTotalNum)}</Text>
               </View>
               <Text style={[styles.feeNote, { color: colors.mutedForeground }]}>
-                After the 5% platform fee, the provider receives ${round2(quoteTotalNum * (1 - PLATFORM_FEE_RATE))}.
+                After the 5% platform fee, the provider receives {formatUsd(quoteTotalNum * (1 - PLATFORM_FEE_RATE))}.
               </Text>
               {quoteError ? <Text style={[styles.errorText, { color: colors.destructive }]}>{quoteError}</Text> : null}
               <PrimaryButton label="Send quote" icon="paper-plane-outline" onPress={submitQuote} testID="send-quote" />
@@ -297,7 +298,7 @@ export default function ChatScreen() {
         title="Accept this quote?"
         body={
           job && job.proposedPrice
-            ? `You're agreeing to "${job.title}" at $${job.proposedPrice}. After the 5% platform fee ($${round2(job.proposedPrice * PLATFORM_FEE_RATE)}), the provider receives $${round2(job.proposedPrice * (1 - PLATFORM_FEE_RATE))}. When both sides accept, the job is confirmed.`
+            ? `You're agreeing to "${job.title}" at ${formatUsd(job.proposedPrice)}. After the 5% platform fee (${formatUsd(job.proposedPrice * PLATFORM_FEE_RATE)}), the provider receives ${formatUsd(job.proposedPrice * (1 - PLATFORM_FEE_RATE))}. When both sides accept, the job is confirmed.`
             : ''
         }
         confirmLabel="Accept quote"

@@ -47,6 +47,7 @@ import {
   DEMO_STORAGE_KEY,
   EMPTY_JOB_PHOTOS,
   EMPTY_JOB_FIT_FILTERS,
+  formatUsd,
   isValidCoarseLocation,
   Job,
   JobFitFilters,
@@ -1450,7 +1451,7 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
       id: rid('m'),
       senderId: user.id,
       senderName: user.name,
-      text: `Proposed a quote: $${total}`,
+      text: `Proposed a quote: ${formatUsd(total)}`,
       kind: 'quote',
       createdAtMs: now,
     };
@@ -1478,7 +1479,7 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
         };
         next = demoChatUpdate(next, chatId, quoteMessage);
         if (otherId) {
-          next = demoNotify(next, otherId, 'quote', 'New quote received', `${user.name} proposed $${total} for "${job.title}".`, jobId, chatId);
+          next = demoNotify(next, otherId, 'quote', 'New quote received', `${user.name} proposed ${formatUsd(total)} for "${job.title}".`, jobId, chatId);
         }
         return next;
       });
@@ -1505,7 +1506,7 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
         createdAtMs: now,
       });
       if (otherId) {
-        await fbNotify(otherId, 'quote', 'New quote received', `${user.name} proposed $${total} for "${job.title}".`, jobId, chatId);
+        await fbNotify(otherId, 'quote', 'New quote received', `${user.name} proposed ${formatUsd(total)} for "${job.title}".`, jobId, chatId);
       }
       return null;
     } catch (e) {
@@ -1530,8 +1531,8 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
     const chatId = chatIdForJob(jobId);
     const otherId = isEmployer ? job.employeeId : job.employerId;
     const sysText = bothAccepted
-      ? `Quote accepted by both sides. Job confirmed at $${agreedPrice}.`
-      : `${user.name} accepted the quote of $${agreedPrice}. Waiting for the other side to confirm.`;
+      ? `Quote accepted by both sides. Job confirmed at ${formatUsd(agreedPrice)}.`
+      : `${user.name} accepted the quote of ${formatUsd(agreedPrice)}. Waiting for the other side to confirm.`;
 
     if (mode === 'demo') {
       updateDemo((d) => {
@@ -1563,7 +1564,7 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
             bothAccepted ? 'job' : 'quote',
             bothAccepted ? 'Job confirmed' : 'Quote accepted',
             bothAccepted
-              ? `"${job.title}" is confirmed at $${agreedPrice}.`
+              ? `"${job.title}" is confirmed at ${formatUsd(agreedPrice)}.`
               : `${user.name} accepted the quote for "${job.title}".`,
             jobId,
             chatId,
@@ -1593,7 +1594,7 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
           otherId,
           bothAccepted ? 'job' : 'quote',
           bothAccepted ? 'Job confirmed' : 'Quote accepted',
-          bothAccepted ? `"${job.title}" is confirmed at $${agreedPrice}.` : `${user.name} accepted the quote for "${job.title}".`,
+          bothAccepted ? `"${job.title}" is confirmed at ${formatUsd(agreedPrice)}.` : `${user.name} accepted the quote for "${job.title}".`,
           jobId,
           chatId,
         );
@@ -1675,7 +1676,7 @@ export function ServiceAppProvider({ children }: { children: ReactNode }) {
     const now = Date.now();
     const chatId = chatIdForJob(jobId);
     const label = status === 'paid' ? 'paid' : 'refunded';
-    const sysText = `Payment marked as ${label}${job.agreedPrice ? ` ($${job.agreedPrice})` : ''}.`;
+    const sysText = `Payment marked as ${label}${job.agreedPrice ? ` (${formatUsd(job.agreedPrice)})` : ''}.`;
 
     if (mode === 'demo') {
       updateDemo((d) => {

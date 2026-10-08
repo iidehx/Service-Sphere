@@ -23,6 +23,7 @@ import {
   chatIdForJob,
   EMPTY_JOB_PHOTOS,
   formatScheduledAt,
+  formatUsd,
   JobPhotos,
   MAX_JOB_PHOTOS,
   MAX_SPECIAL_REQUIREMENTS_LENGTH,
@@ -361,7 +362,7 @@ export default function JobDetailScreen() {
                 {job.agreedPrice ? 'Agreed price' : job.proposedPrice ? 'Latest quote' : 'Price offer'}
               </Text>
               <Text style={[styles.infoValue, { color: colors.foreground }]}>
-                ${job.agreedPrice ?? job.proposedPrice ?? job.priceOffer}
+                {formatUsd(job.agreedPrice ?? job.proposedPrice ?? job.priceOffer)}
               </Text>
             </View>
             <View style={[styles.infoDivider, { backgroundColor: colors.border }]} />
@@ -547,12 +548,12 @@ export default function JobDetailScreen() {
                 by {job.quoteBy === job.employerId ? job.employerName : job.employeeName ?? 'provider'}
               </Text>
             </View>
-            <KeyValueRow label="Labor" value={`$${job.quoteBreakdown.labor}`} />
-            <KeyValueRow label="Materials" value={`$${job.quoteBreakdown.materials}`} />
+            <KeyValueRow label="Labor" value={formatUsd(job.quoteBreakdown.labor)} />
+            <KeyValueRow label="Materials" value={formatUsd(job.quoteBreakdown.materials)} />
             <KeyValueRow label="Expected hours" value={`${job.quoteBreakdown.expectedHours} h`} />
-            <KeyValueRow label="Extra fees" value={`$${job.quoteBreakdown.extraFees}`} />
+            <KeyValueRow label="Extra fees" value={formatUsd(job.quoteBreakdown.extraFees)} />
             <View style={[styles.divider, { backgroundColor: colors.border }]} />
-            <KeyValueRow label="Total" value={`$${job.proposedPrice}`} strong />
+            <KeyValueRow label="Total" value={formatUsd(job.proposedPrice)} strong />
             {job.status === 'negotiating' && isParticipant ? (
               <View style={{ gap: 10, marginTop: 6 }}>
                 <View style={styles.acceptRow}>
@@ -576,7 +577,7 @@ export default function JobDetailScreen() {
                 {!myAccepted ? (
                   <View style={{ flexDirection: 'row', gap: 10 }}>
                     <PrimaryButton
-                      label={`Accept quote ($${job.proposedPrice})`}
+                      label={`Accept quote (${formatUsd(job.proposedPrice)})`}
                       testID="accept-quote"
                       onPress={() => setConfirm('acceptQuote')}
                       style={{ flex: 1 }}
@@ -599,11 +600,11 @@ export default function JobDetailScreen() {
         {job.agreedPrice ? (
           <Card style={{ gap: 6, marginTop: 12 }}>
             <Text style={[styles.sectionLabelStrong, { color: colors.foreground }]}>Payment</Text>
-            <KeyValueRow label="Agreed price" value={`$${job.agreedPrice}`} strong />
-            <KeyValueRow label="Platform fee (5%, provider)" value={`−$${job.platformFee ?? round2(job.agreedPrice * PLATFORM_FEE_RATE)}`} />
+            <KeyValueRow label="Agreed price" value={formatUsd(job.agreedPrice)} strong />
+            <KeyValueRow label="Platform fee (5%, provider)" value={`−${formatUsd(job.platformFee ?? job.agreedPrice * PLATFORM_FEE_RATE)}`} />
             <KeyValueRow
               label="Provider receives"
-              value={`$${round2(job.agreedPrice - (job.platformFee ?? round2(job.agreedPrice * PLATFORM_FEE_RATE)))}`}
+              value={formatUsd(job.agreedPrice - (job.platformFee ?? round2(job.agreedPrice * PLATFORM_FEE_RATE)))}
             />
             <View style={styles.badgeRow}>
               <PayBadge status={job.paymentStatus} />
@@ -676,7 +677,7 @@ export default function JobDetailScreen() {
       <ConfirmDialog
         visible={confirm === 'acceptQuote'}
         title="Accept this quote?"
-        body={`You're agreeing to "${job.title}" at $${job.proposedPrice}. After the 5% platform fee ($${fee}), the provider receives $${round2((job.proposedPrice ?? 0) - fee)}. When both sides accept, the job is confirmed.`}
+        body={`You're agreeing to "${job.title}" at ${formatUsd(job.proposedPrice)}. After the 5% platform fee (${formatUsd(fee)}), the provider receives ${formatUsd((job.proposedPrice ?? 0) - fee)}. When both sides accept, the job is confirmed.`}
         confirmLabel="Accept quote"
         onConfirm={() => {
           setConfirm(null);
@@ -698,7 +699,7 @@ export default function JobDetailScreen() {
       <ConfirmDialog
         visible={confirm === 'paid'}
         title="Mark payment as paid?"
-        body={`Confirm you've paid $${job.agreedPrice} to ${job.employeeName ?? 'the provider'} outside the app.`}
+        body={`Confirm you've paid ${formatUsd(job.agreedPrice)} to ${job.employeeName ?? 'the provider'} outside the app.`}
         confirmLabel="Mark paid"
         onConfirm={() => {
           setConfirm(null);

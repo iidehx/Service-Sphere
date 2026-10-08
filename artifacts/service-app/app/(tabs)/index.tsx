@@ -6,7 +6,7 @@ import { useRouter } from 'expo-router';
 import { Avatar, Card, DotBadge, EmptyState, Pill, SectionTitle } from '@/components/AppPrimitives';
 import { JobCard } from '@/components/JobCard';
 import { Screen } from '@/components/AppPrimitives';
-import { CATEGORIES, CATEGORY_ICONS, firstNameOf, greetingForNow, useServiceApp } from '@/context/ServiceAppContext';
+import { CATEGORIES, CATEGORY_ICONS, firstNameOf, formatUsd, greetingForNow, useServiceApp } from '@/context/ServiceAppContext';
 import { useColors } from '@/hooks/useColors';
 import { filterJobsByFit, getProviderBrowseJobs } from '@/lib/jobFit';
 
@@ -164,7 +164,7 @@ export default function HomeScreen() {
             <View style={styles.statsRow}>
               <StatCard icon="search-outline" label="Available" value={String(available.length)} />
               <StatCard icon="hammer-outline" label="Active" value={String(activeMine.length)} />
-              <StatCard icon="wallet-outline" label="Earned" value={`$${earned}`} />
+              <StatCard icon="wallet-outline" label="Earned" value={formatUsd(earned)} />
             </View>
 
             {user.categories.length === 0 ? (

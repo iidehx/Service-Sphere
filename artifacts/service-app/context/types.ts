@@ -299,6 +299,12 @@ export const MAX_SPECIAL_REQUIREMENTS_LENGTH = 1000;
 
 export const round2 = (n: number) => Math.round(n * 100) / 100;
 
+/** "$110" for whole dollars, "$104.50" when there are cents. */
+export const formatUsd = (n: number | null | undefined) => {
+  const value = round2(n ?? 0);
+  return Number.isInteger(value) ? `$${value}` : `$${value.toFixed(2)}`;
+};
+
 export const quoteTotal = (b: QuoteBreakdown) => round2(b.labor + b.materials + b.extraFees);
 
 export const chatIdForJob = (jobId: string) => `chat-${jobId}`;
