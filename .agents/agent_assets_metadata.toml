@@ -14,3 +14,17 @@ mtime_ms = 1791439345712
 storage_uri = "gcs://replit-rams-assets-sisko/rams/assets/repl:61a9cf3d-ff11-40cd-99c5-568e15641e3f/55b59694-9536-426d-9797-36edfd106b03/582c848d-d7ed-40ed-b73a-188c790a1b3d"
 storage_version_token = "1791439372448698"
 content_type = "text/markdown"
+
+[[outputs]]
+id = "zpVo1jcQLz4YX_RbF6z5q"
+uri = "file://REPLIT_CHAT_HISTORY.md"
+type = "text"
+title = "Replit chat history — partial archive"
+description = "Earlier conversation summary and verbatim recent user requests, clearly labeled. Not a complete original chat export; no secret values."
+logical_id = "9ed721e3-85a9-43ac-b654-cb0bfcbbc1d2"
+content_hash = "sha256:c5faaf716d6881d1941f00fcc0d85a9bafeba1b4244be3878100ee4f296f5f07"
+size = 9461
+mtime_ms = 1791439589743
+storage_uri = "gcs://replit-rams-assets-sisko/rams/assets/repl:61a9cf3d-ff11-40cd-99c5-568e15641e3f/9ed721e3-85a9-43ac-b654-cb0bfcbbc1d2/2befc041-b1bb-4f50-84e0-ebcf27852771"
+storage_version_token = "1791439604468864"
+content_type = "text/markdown"
