@@ -1,5 +1,6 @@
 {
   "_note": "Test accounts for the LOCAL Firebase emulators only (pnpm run emulators). They do not exist in the cloud project and are wiped when the emulators stop.",
   "employer": { "name": "Erin Employer", "email": "employer.test@example.com", "password": "Emulator-Test-2026!" },
-  "provider": { "name": "Pat Provider", "email": "provider.test@example.com", "password": "Emulator-Test-2026!" }
+  "provider": { "name": "Pat Provider", "email": "provider.test@example.com", "password": "Emulator-Test-2026!" },
+  "deletion": { "name": "Dana Delete", "email": "delete.test@example.com", "password": "Emulator-Test-2026!" }
 }
