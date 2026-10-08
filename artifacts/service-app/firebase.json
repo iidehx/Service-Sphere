@@ -17,7 +17,7 @@
   "functions": {
     "source": "functions",
     "predeploy": [
-      "pnpm -C \"$RESOURCE_DIR\" run build"
+      "pnpm --dir functions run build"
     ]
   }
 }
