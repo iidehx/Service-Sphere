@@ -1028,3 +1028,23 @@ test('only completed-job participants can submit immutable reviews and reports s
   await assertFails(getDoc(doc(employer, 'reports/any-report')));
   await assertSucceeds(getDoc(doc(admin, 'reports/any-report')));
 });
+
+test('push tokens are owner-only and must be well-formed Expo tokens', async () => {
+  await seed();
+  const provider = dbFor('provider');
+  const employer = dbFor('employer');
+  const disabled = dbFor('disabled');
+  const token = { token: 'ExponentPushToken[abc123]', platform: 'android', updatedAtMs: now };
+
+  await assertSucceeds(setDoc(doc(provider, 'pushTokens/provider'), token));
+  await assertSucceeds(getDoc(doc(provider, 'pushTokens/provider')));
+  await assertFails(getDoc(doc(employer, 'pushTokens/provider')));
+  await assertFails(getDocs(collection(employer, 'pushTokens')));
+  await assertFails(setDoc(doc(employer, 'pushTokens/provider'), token));
+  await assertFails(deleteDoc(doc(employer, 'pushTokens/provider')));
+  await assertFails(setDoc(doc(provider, 'pushTokens/provider'), { ...token, token: 'https://example.test/hook' }));
+  await assertFails(setDoc(doc(provider, 'pushTokens/provider'), { ...token, extra: 'x' }));
+  await assertFails(setDoc(doc(disabled, 'pushTokens/disabled'), token));
+  await assertSucceeds(deleteDoc(doc(provider, 'pushTokens/provider')));
+  await assertFails(getDoc(doc(provider, 'pushDeliveries/any-event')));
+});

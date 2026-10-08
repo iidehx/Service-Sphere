@@ -17,7 +17,8 @@ import * as SplashScreen from 'expo-splash-screen';
 import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
 import { ServiceAppContext, ServiceAppProvider, useServiceApp } from '@/context/ServiceAppContext';
-import { EMAIL_VERIFICATION_REQUIRED, getFirebase, isFirebaseConfigured } from '@/lib/firebase';
+import { EMAIL_VERIFICATION_REQUIRED, isFirebaseConfigured } from '@/lib/firebase';
+import { savePushToken } from '@/lib/pushTokens';
 import { isProfileComplete } from '@/context/types';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
@@ -44,16 +45,12 @@ if (!isExpoGo) {
 const queryClient = new QueryClient();
 
 /**
- * Registers the device for push notifications and persists the Expo push token
- * to the API server (stored in Postgres — never exposed to other app users).
+ * Registers the device for push notifications and saves the Expo push token to
+ * the owner-only `pushTokens/{uid}` Firestore document, where the
+ * `sendJobPushNotifications` Cloud Function picks it up.
  *
- * Requires a native development or production build; returns immediately on
- * web or simulator where FCM tokens are not available.
- *
- * To enable push notifications:
- *   1. Run `eas init` in artifacts/service-app to get an EAS project ID.
- *   2. Set the EXPO_PUBLIC_EAS_PROJECT_ID environment variable to that UUID.
- *   3. Build a development or production binary with `eas build`.
+ * Requires a native development or production build (EAS project ID from
+ * app.json); returns immediately on web, in Expo Go, and in demo mode.
  */
 function PushRegistrar() {
   const ctx = useContext(ServiceAppContext);
@@ -61,6 +58,8 @@ function PushRegistrar() {
   const registered = useRef<string | null>(null);
 
   useEffect(() => {
+    // Sign-out removes the token, so register again on the next sign-in.
+    if (!userId) registered.current = null;
     // Only run in a real build — Expo Go dropped push support in SDK 53.
     if (isExpoGo || !isFirebaseConfigured || !userId || Platform.OS === 'web') return;
 
@@ -101,30 +100,9 @@ function PushRegistrar() {
 
         const tokenOptions = easProjectId ? { projectId: easProjectId } : undefined;
         const tokenData = await Notifications.getExpoPushTokenAsync(tokenOptions);
-        const token = tokenData.data;
-
-        // Send the token to the API server (stored in Postgres, never in Firestore).
-        const { auth } = getFirebase();
-        const idToken = await auth.currentUser?.getIdToken();
-        const domain = process.env.EXPO_PUBLIC_DOMAIN;
-
-        if (idToken && domain) {
-          const response = await fetch(`https://${domain}/api/notifications/register-token`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${idToken}`,
-            },
-            body: JSON.stringify({ token }),
-          });
-          // Only mark as registered if the server confirmed persistence.
-          // A 503 (DB unavailable) means the token wasn't stored — don't
-          // suppress a future retry.
-          if (response.ok) {
-            const body = await response.json() as { ok?: boolean };
-            if (body.ok && userId) registered.current = userId;
-          }
-        }
+        if (!userId) return;
+        await savePushToken(userId, tokenData.data);
+        registered.current = userId;
       } catch {
         // Push registration is best-effort; never crash the app.
       }

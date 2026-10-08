@@ -757,6 +757,24 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // One Expo push token per account. Only the owner can see or change it;
+    // the sendJobPushNotifications Cloud Function reads it with Admin access.
+    match /pushTokens/{userId} {
+      allow get, delete: if isSelf(userId);
+      allow create, update: if isSelf(userId) && isActive()
+        && request.resource.data.keys().hasAll(['token', 'platform', 'updatedAtMs'])
+        && request.resource.data.keys().hasOnly(['token', 'platform', 'updatedAtMs'])
+        && request.resource.data.token is string
+        && request.resource.data.token.matches('^Expo(nent)?PushToken\\[[^\\]]{1,200}\\]$')
+        && request.resource.data.platform in ['ios', 'android']
+        && request.resource.data.updatedAtMs is number;
+    }
+
+    // Server-only idempotency log for push delivery.
+    match /pushDeliveries/{eventId} {
+      allow read, write: if false;
+    }
+
     match /reports/{reportId} {
       allow create: if isActive()
         && request.resource.data.keys().hasAll(['reporterId', 'reportedUserId', 'reason', 'message', 'createdAtMs'])

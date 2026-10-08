@@ -9,7 +9,7 @@ import {
 } from "firebase-admin/firestore";
 import { logger } from "firebase-functions";
 import { auth as authFunctions } from "firebase-functions/v1";
-import { onDocumentCreated } from "firebase-functions/v2/firestore";
+import { onDocumentCreated, onDocumentUpdated } from "firebase-functions/v2/firestore";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { publicProfileFromUser } from "./publicProfile.js";
@@ -20,6 +20,7 @@ import {
   type RatingReview,
 } from "./ratingAggregate.js";
 import { rankEmergencyCandidates, usableCoordinates, type BusyJob, type EmergencyCandidate } from "./emergencyMatching.js";
+import { deriveJobPushes, isExpoPushToken } from "./pushNotifications.js";
 
 initializeApp();
 
@@ -66,6 +67,7 @@ export const deleteAccount = onCall({ cors: true, invoker: "public" }, async (re
         const batch = db.batch();
         batch.delete(db.collection("users").doc(uid));
         batch.delete(db.collection("publicProfiles").doc(uid));
+        batch.delete(db.collection("pushTokens").doc(uid));
         await batch.commit();
       },
     });
@@ -91,6 +93,7 @@ export const cleanDeletedAccountProfiles = authFunctions.user().onDelete(async (
   const batch = db.batch();
   batch.delete(db.collection("users").doc(user.uid));
   batch.delete(db.collection("publicProfiles").doc(user.uid));
+  batch.delete(db.collection("pushTokens").doc(user.uid));
   await batch.commit();
   logger.info({ uid: user.uid }, "Cleaned profiles after Auth account deletion");
 });
@@ -584,3 +587,84 @@ export const aggregateEmployerRating = onDocumentCreated(
     );
   },
 );
+
+const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
+const PUSH_DELIVERY_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Sends Expo push notifications for job lifecycle changes. Recipients and text
+ * come from the job's trusted before/after state (see pushNotifications.ts).
+ */
+export const sendJobPushNotifications = onDocumentUpdated("jobs/{jobId}", async (event) => {
+  const before = event.data?.before.data();
+  const after = event.data?.after.data();
+  if (!before || !after) return;
+
+  const pushes = deriveJobPushes(before, after);
+  if (pushes.length === 0) return;
+
+  const db = getFirestore();
+  // Firestore triggers are delivered at least once; claim the event ID so a
+  // redelivery cannot send the same pushes twice.
+  try {
+    await db.collection("pushDeliveries").doc(event.id).create({
+      jobId: event.params.jobId,
+      events: pushes.map((push) => push.event),
+      expireAt: new Date(Date.now() + PUSH_DELIVERY_RETENTION_MS),
+    });
+  } catch (error) {
+    if ((error as { code?: unknown })?.code === 6) return; // ALREADY_EXISTS
+    throw error;
+  }
+
+  const messages: Array<{ recipientId: string; message: Record<string, unknown> }> = [];
+  for (const push of pushes) {
+    const [userSnapshot, tokenSnapshot] = await Promise.all([
+      db.collection("users").doc(push.recipientId).get(),
+      db.collection("pushTokens").doc(push.recipientId).get(),
+    ]);
+    const user = userSnapshot.data();
+    const token = tokenSnapshot.data()?.token;
+    if (!user || user.disabled === true || !isExpoPushToken(token)) continue;
+    if (push.isQuoteUpdate && user.notifyQuotes === false) continue;
+    messages.push({
+      recipientId: push.recipientId,
+      message: {
+        to: token,
+        title: push.title,
+        body: push.body,
+        sound: "default",
+        channelId: "default",
+        data: { jobId: event.params.jobId, event: push.event },
+      },
+    });
+  }
+  if (messages.length === 0) return;
+
+  const response = await fetch(EXPO_PUSH_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(messages.map(({ message }) => message)),
+  });
+  if (!response.ok) {
+    logger.error("Expo push request failed", { status: response.status, jobId: event.params.jobId });
+    return;
+  }
+
+  // Drop tokens for devices that uninstalled the app or revoked permission.
+  const result = (await response.json()) as {
+    data?: Array<{ status?: string; details?: { error?: string } }>;
+  };
+  logger.info("Sent job push notifications", {
+    jobId: event.params.jobId,
+    events: pushes.map((push) => push.event),
+    tickets: (result.data ?? []).map((ticket) => ticket.details?.error ?? ticket.status),
+  });
+  await Promise.all(
+    (result.data ?? []).map(async (ticket, index) => {
+      if (ticket.status === "error" && ticket.details?.error === "DeviceNotRegistered") {
+        await db.collection("pushTokens").doc(messages[index].recipientId).delete();
+      }
+    }),
+  );
+});
