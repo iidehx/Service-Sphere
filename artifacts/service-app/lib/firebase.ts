@@ -1,8 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { FirebaseApp, getApp, getApps, initializeApp } from 'firebase/app';
-import { Auth, getAuth } from 'firebase/auth';
-import { Firestore, initializeFirestore } from 'firebase/firestore';
-import { FirebaseStorage, getStorage } from 'firebase/storage';
+import { Auth, connectAuthEmulator, getAuth } from 'firebase/auth';
+import { connectFirestoreEmulator, Firestore, initializeFirestore } from 'firebase/firestore';
+import { connectFunctionsEmulator, getFunctions } from 'firebase/functions';
+import { connectStorageEmulator, FirebaseStorage, getStorage } from 'firebase/storage';
 import { Platform } from 'react-native';
 
 /**
@@ -14,14 +15,34 @@ import { Platform } from 'react-native';
  * EXPO_PUBLIC_* vars are inlined at bundle time, so the Expo workflow must be
  * restarted after adding or changing them.
  */
-const firebaseConfig = {
-  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
-};
+/**
+ * Local emulator mode (EXPO_PUBLIC_USE_FIREBASE_EMULATOR=true): the app talks
+ * to the Firebase Local Emulator Suite (`pnpm run emulators`) instead of the
+ * cloud project. It uses a `demo-` project ID, which the emulators guarantee
+ * never reaches real Google services, so test accounts and data stay local.
+ */
+export const useFirebaseEmulator = process.env.EXPO_PUBLIC_USE_FIREBASE_EMULATOR === 'true';
+const EMULATOR_PROJECT_ID = 'demo-service-sphere';
+// 127.0.0.1 works for web and iOS simulators; Android emulators need 10.0.2.2.
+const emulatorHost = process.env.EXPO_PUBLIC_FIREBASE_EMULATOR_HOST || '127.0.0.1';
+
+const firebaseConfig = useFirebaseEmulator
+  ? {
+      apiKey: 'demo-api-key',
+      authDomain: `${EMULATOR_PROJECT_ID}.firebaseapp.com`,
+      projectId: EMULATOR_PROJECT_ID,
+      storageBucket: `${EMULATOR_PROJECT_ID}.appspot.com`,
+      messagingSenderId: '0',
+      appId: '1:0:web:0',
+    }
+  : {
+      apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
+      authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
+      projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
+      storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
+      messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+      appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
+    };
 
 export const isFirebaseConfigured = Boolean(
   firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.appId && firebaseConfig.authDomain,
@@ -68,6 +89,13 @@ export function getFirebase() {
     // Replit preview iframe) where WebChannel streaming can fail.
     db = initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
     storage = getStorage(app);
+
+    if (useFirebaseEmulator) {
+      connectAuthEmulator(auth as Auth, `http://${emulatorHost}:9099`, { disableWarnings: true });
+      connectFirestoreEmulator(db, emulatorHost, 8085);
+      connectStorageEmulator(storage, emulatorHost, 9199);
+      connectFunctionsEmulator(getFunctions(app), emulatorHost, 5001);
+    }
   }
   return { app, auth: auth as Auth, db: db as Firestore, storage: storage as FirebaseStorage };
 }
